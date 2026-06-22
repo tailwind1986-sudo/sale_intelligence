@@ -381,7 +381,7 @@ def page_company_management():
         # ── 등록/수정 ──
         with tab_add:
             edit_id = st.session_state.get("edit_company_id")
-            editing = db.query(Company).get(edit_id) if edit_id else None
+            editing = db.get(Company, edit_id) if edit_id else None
 
             st.subheader("고객사 수정" if editing else "신규 고객사 등록")
 
@@ -602,47 +602,68 @@ def page_meeting_upload():
     db = get_db()
     try:
         companies_all = db.query(Company).options(
-                joinedload(Company.contacts),
-                joinedload(Company.meetings).joinedload(MeetingRecord.analysis),
-                joinedload(Company.promises),
-                joinedload(Company.action_items),
-                joinedload(Company.customer_infos),
-            ).order_by(Company.name).all()
+            joinedload(Company.contacts),
+        ).order_by(Company.name).all()
         if not companies_all:
             st.warning("고객사를 먼저 등록해주세요.")
             return
 
-        with st.form("upload_form"):
-            st.subheader("미팅 기본 정보")
+        # ── STEP 1: 전사 텍스트 (form 밖 — file_uploader는 form 안에서 조건부 렌더링 시 submit 후 소실됨)
+        st.markdown("### ① 전사 텍스트 입력")
+        input_method = st.radio("입력 방식", ["TXT 파일 업로드", "직접 입력"], horizontal=True, key="up_method")
+
+        if input_method == "TXT 파일 업로드":
+            uploaded = st.file_uploader(
+                "클로바노트 TXT 파일 (.txt)", type=["txt"], key="up_file",
+                help="네이버 클로바노트에서 내보낸 .txt 파일을 업로드하세요"
+            )
+            if uploaded:
+                raw_text = uploaded.read().decode("utf-8", errors="ignore")
+                file_name = uploaded.name
+                st.session_state["up_raw_text"] = raw_text
+                st.session_state["up_file_name"] = file_name
+                st.success(f"✅ 파일 로드 완료: **{file_name}** ({len(raw_text):,}자)")
+                with st.expander("파일 내용 미리보기"):
+                    st.text(raw_text[:800] + ("\n…(이하 생략)" if len(raw_text) > 800 else ""))
+            elif "up_raw_text" not in st.session_state:
+                st.info("TXT 파일을 선택하면 내용이 자동으로 로드됩니다.")
+        else:
+            direct = st.text_area(
+                "미팅 내용 직접 입력", height=250, key="up_direct",
+                placeholder="미팅에서 나눈 대화 내용을 자유롭게 입력하세요…"
+            )
+            st.session_state["up_raw_text"] = direct
+            st.session_state["up_file_name"] = ""
+
+        # 현재 로드된 텍스트 확인
+        current_text = st.session_state.get("up_raw_text", "")
+        if current_text:
+            st.caption(f"📝 현재 로드된 텍스트: {len(current_text):,}자")
+
+        st.divider()
+
+        # ── STEP 2: 미팅 기본 정보 (form)
+        st.markdown("### ② 미팅 기본 정보")
+        with st.form("upload_form", clear_on_submit=True):
             c1, c2 = st.columns(2)
             with c1:
                 sel_company = st.selectbox("고객사 *", companies_all, format_func=lambda x: x.name)
                 meeting_date = st.date_input("미팅 일자 *", value=date.today())
                 meeting_type = st.selectbox("미팅 유형", MEETING_TYPES)
             with c2:
-                attendees = st.text_input("참석자 (쉼표 구분)", placeholder="홍길동, 이순신, ...")
-                memo = st.text_area("메모 / 특이사항")
+                attendees = st.text_input("참석자 (쉼표 구분)", placeholder="홍길동, 이순신")
+                memo = st.text_area("메모 / 특이사항", height=100)
+                run_ai = st.checkbox("저장 후 AI 분석 자동 실행", value=True)
 
-            st.subheader("전사 텍스트")
-            input_method = st.radio("입력 방식", ["TXT 파일 업로드", "직접 입력"], horizontal=True)
+            submitted = st.form_submit_button("💾 저장", use_container_width=True, type="primary")
 
-            raw_text = ""
-            file_name = ""
-            if input_method == "TXT 파일 업로드":
-                uploaded = st.file_uploader("클로바노트 TXT 파일", type=["txt"])
-                if uploaded:
-                    raw_text = uploaded.read().decode("utf-8", errors="ignore")
-                    file_name = uploaded.name
-                    st.text_area("파일 미리보기", raw_text[:1000] + ("…" if len(raw_text) > 1000 else ""), height=200, disabled=True)
-            else:
-                raw_text = st.text_area("미팅 내용 직접 입력", height=300)
-
-            run_ai = st.checkbox("업로드 후 AI 분석 자동 실행", value=True)
-            submitted = st.form_submit_button("📥 저장")
-
+        # ── STEP 3: 저장 처리
         if submitted:
+            raw_text = st.session_state.get("up_raw_text", "")
+            file_name = st.session_state.get("up_file_name", "")
+
             if not raw_text.strip():
-                st.error("전사 텍스트를 입력해주세요.")
+                st.error("전사 텍스트가 없습니다. 먼저 파일을 업로드하거나 직접 입력해주세요.")
             else:
                 record = MeetingRecord(
                     company_id=sel_company.id,
@@ -657,17 +678,23 @@ def page_meeting_upload():
                 db.commit()
                 db.refresh(record)
 
-                st.success(f"미팅 기록이 저장되었습니다. (ID: {record.id})")
+                # 저장 후 텍스트 초기화
+                st.session_state.pop("up_raw_text", None)
+                st.session_state.pop("up_file_name", None)
+
+                st.success(f"✅ 미팅 기록 저장 완료! (ID: {record.id})")
 
                 if run_ai:
-                    with st.spinner("🤖 AI 분석 중입니다… (30초~1분 소요)"):
+                    with st.spinner("🤖 AI 분석 중… (30초~1분 소요)"):
                         try:
                             result = analyze_meeting_transcript(raw_text)
                             _save_analysis(db, record, result)
-                            st.success("✅ AI 분석 완료! '미팅 요약 결과' 메뉴에서 확인하세요.")
+                            st.success("🎉 AI 분석 완료! '미팅 요약 결과' 메뉴에서 확인하세요.")
                             st.session_state["last_meeting_id"] = record.id
                         except Exception as e:
                             st.error(f"AI 분석 오류: {e}")
+                            st.info("'미팅 요약 결과' 메뉴에서 수동으로 분석을 실행할 수 있습니다.")
+                            st.session_state["last_meeting_id"] = record.id
                 else:
                     st.info("'미팅 요약 결과' 메뉴에서 수동으로 분석을 실행하세요.")
                     st.session_state["last_meeting_id"] = record.id
