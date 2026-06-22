@@ -38,7 +38,11 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
-create_database()
+try:
+    create_database()
+except Exception as _db_err:
+    st.error(f"DB 연결 오류: {_db_err}")
+    st.stop()
 
 
 # ─── CSS ──────────────────────────────────────────────────────────────────────
