@@ -4,19 +4,18 @@ import json
 import os
 import re
 
-import anthropic
 import streamlit as st
+from openai import OpenAI
 
 
 def _get_api_key() -> str:
-    # Streamlit Cloud secrets 우선, 없으면 환경변수
     try:
-        key = st.secrets.get("ANTHROPIC_API_KEY", "")
+        key = st.secrets.get("OPENAI_API_KEY", "")
         if key:
             return key
     except Exception:
         pass
-    return os.getenv("ANTHROPIC_API_KEY", "")
+    return os.getenv("OPENAI_API_KEY", "")
 
 
 _PROMPT_TEMPLATE = """당신은 영업 미팅 분석 전문가입니다. 아래 미팅 전사 텍스트를 분석하여 JSON 형식으로 결과를 반환해주세요.
@@ -34,7 +33,7 @@ _PROMPT_TEMPLATE = """당신은 영업 미팅 분석 전문가입니다. 아래 
   "price_mentions": ["가격 관련 언급1"],
   "competitor_mentions": ["경쟁사 또는 경쟁제품 언급1"],
   "promises": [
-    {{"content": "약속 내용", "promised_by": "약속한 주체(고객사명 또는 담당자명)", "due_date": "YYYY-MM-DD 또는 null"}}
+    {{"content": "약속 내용", "promised_by": "약속한 주체", "due_date": "YYYY-MM-DD 또는 null"}}
   ],
   "follow_ups": ["후속조치1", "후속조치2"],
   "pending_items": ["미결 사항1"],
@@ -54,20 +53,25 @@ _PROMPT_TEMPLATE = """당신은 영업 미팅 분석 전문가입니다. 아래 
 
 
 def analyze_meeting_transcript(transcript: str) -> dict:
-    """Claude API로 미팅 전사 텍스트를 분석하고 구조화된 결과를 반환한다."""
+    """OpenAI API로 미팅 전사 텍스트를 분석하고 구조화된 결과를 반환한다."""
     api_key = _get_api_key()
     if not api_key:
-        raise ValueError("ANTHROPIC_API_KEY가 설정되지 않았습니다. .env 파일 또는 Streamlit Secrets를 확인해주세요.")
+        raise ValueError("OPENAI_API_KEY가 설정되지 않았습니다. Streamlit Secrets 또는 .env 파일을 확인해주세요.")
 
-    client = anthropic.Anthropic(api_key=api_key)
+    client = OpenAI(api_key=api_key)
 
-    message = client.messages.create(
-        model="claude-sonnet-4-6",
+    response = client.chat.completions.create(
+        model="gpt-4o",
+        messages=[
+            {"role": "system", "content": "당신은 영업 미팅 분석 전문가입니다. 요청한 JSON 형식으로만 응답합니다."},
+            {"role": "user", "content": _PROMPT_TEMPLATE.format(transcript=transcript)},
+        ],
+        temperature=0.3,
         max_tokens=4096,
-        messages=[{"role": "user", "content": _PROMPT_TEMPLATE.format(transcript=transcript)}],
+        response_format={"type": "json_object"},
     )
 
-    raw = message.content[0].text.strip()
+    raw = response.choices[0].message.content.strip()
 
     if "```" in raw:
         m = re.search(r"```(?:json)?\s*([\s\S]+?)\s*```", raw)
