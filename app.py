@@ -13,6 +13,7 @@ import pandas as pd
 import streamlit as st
 from dotenv import load_dotenv
 from sqlalchemy import desc, func, or_
+from sqlalchemy.orm import joinedload
 
 load_dotenv()
 
@@ -44,102 +45,98 @@ create_database()
 
 st.markdown("""
 <style>
-/* ── 전체 레이아웃 ── */
-.main .block-container { padding-top: 1.5rem; padding-bottom: 2rem; max-width: 1400px; }
-
-/* ── 사이드바 배경 ── */
-[data-testid="stSidebar"] {
-    background: #1E293B !important;
-    min-width: 220px !important;
-}
-[data-testid="stSidebar"] > div:first-child {
-    background: #1E293B !important;
-    padding-top: 1rem;
+/* ══ 전체 레이아웃 ══ */
+.main .block-container {
+    padding-top: 1.5rem;
+    padding-bottom: 2rem;
+    max-width: 1400px;
 }
 
-/* ── 사이드바 모든 텍스트 흰색 ── */
-[data-testid="stSidebar"] * {
-    color: #E2E8F0 !important;
+/* ══ 사이드바 ══ */
+[data-testid="stSidebar"],
+[data-testid="stSidebar"] > div:first-child,
+[data-testid="stSidebar"] section {
+    background-color: #0F172A !important;
 }
 
-/* ── 라디오 버튼 레이블 ── */
-[data-testid="stSidebar"] label,
-[data-testid="stSidebar"] .stRadio label,
-[data-testid="stSidebar"] p,
-[data-testid="stSidebar"] span {
-    color: #E2E8F0 !important;
-    font-size: 0.93rem !important;
+/* 사이드바 버튼 기본 */
+[data-testid="stSidebar"] button[kind="secondary"],
+[data-testid="stSidebar"] .stButton > button {
+    background-color: transparent !important;
+    color: #94A3B8 !important;
+    border: none !important;
+    border-radius: 8px !important;
+    text-align: left !important;
+    font-size: 0.9rem !important;
     font-weight: 500 !important;
+    padding: 0.55rem 1rem !important;
+    margin: 1px 0 !important;
+    transition: all 0.15s ease !important;
+    box-shadow: none !important;
 }
 
-/* ── 선택된 라디오 ── */
-[data-testid="stSidebar"] [aria-checked="true"] + label,
-[data-testid="stSidebar"] [data-baseweb="radio"][aria-checked="true"] label {
-    color: #ffffff !important;
-    font-weight: 700 !important;
+/* 사이드바 버튼 호버 */
+[data-testid="stSidebar"] .stButton > button:hover {
+    background-color: #1E293B !important;
+    color: #E2E8F0 !important;
 }
 
-/* ── 라디오 호버 ── */
-[data-testid="stSidebar"] [data-baseweb="radio"]:hover label {
-    color: #ffffff !important;
+/* 사이드바 모든 텍스트 */
+[data-testid="stSidebar"] p,
+[data-testid="stSidebar"] span,
+[data-testid="stSidebar"] div {
+    color: #94A3B8;
 }
 
-/* ── 라디오 원 색상 ── */
-[data-testid="stSidebar"] [data-baseweb="radio"] div[class] {
-    border-color: #94A3B8 !important;
-}
-
-/* ── 구분선 ── */
-[data-testid="stSidebar"] hr {
-    border-color: #334155 !important;
-}
-
-/* ── 메트릭 카드 ── */
+/* ══ 메트릭 카드 ══ */
 .metric-card {
-    background: white;
+    background: #FFFFFF;
     border-radius: 12px;
-    padding: 1.2rem 1.5rem;
-    box-shadow: 0 1px 4px rgba(0,0,0,0.08);
-    border-left: 4px solid #1E40AF;
+    padding: 1.1rem 1.4rem;
+    box-shadow: 0 1px 6px rgba(0,0,0,0.07);
+    border-left: 4px solid #2563EB;
     margin-bottom: 0.5rem;
 }
-.metric-card h3 { margin: 0; font-size: 2rem; color: #1E40AF; }
-.metric-card p  { margin: 0; color: #64748B; font-size: 0.85rem; }
+.metric-card h3 { margin: 0 0 4px; font-size: 1.9rem; font-weight: 700; }
+.metric-card p  { margin: 0; color: #64748B; font-size: 0.82rem; font-weight: 500; }
 
-/* ── 섹션 헤더 ── */
+/* ══ 섹션 타이틀 ══ */
 .section-title {
-    font-size: 1.1rem;
+    font-size: 1rem;
     font-weight: 700;
     color: #1E293B;
-    margin: 1.2rem 0 0.6rem;
+    margin: 1.2rem 0 0.5rem;
     padding-bottom: 0.3rem;
-    border-bottom: 2px solid #EFF6FF;
+    border-bottom: 2px solid #E2E8F0;
 }
 
-/* ── 배지 ── */
-.badge-high   { background:#FEE2E2; color:#991B1B !important; padding:2px 10px; border-radius:99px; font-size:0.78rem; font-weight:600; }
-.badge-medium { background:#FEF3C7; color:#92400E !important; padding:2px 10px; border-radius:99px; font-size:0.78rem; font-weight:600; }
-.badge-low    { background:#D1FAE5; color:#065F46 !important; padding:2px 10px; border-radius:99px; font-size:0.78rem; font-weight:600; }
-.badge-info   { background:#DBEAFE; color:#1E40AF !important; padding:2px 10px; border-radius:99px; font-size:0.78rem; font-weight:600; }
+/* ══ 배지 ══ */
+.badge-high   { display:inline-block; background:#FEE2E2; color:#B91C1C; padding:1px 9px; border-radius:99px; font-size:0.75rem; font-weight:700; }
+.badge-medium { display:inline-block; background:#FEF9C3; color:#854D0E; padding:1px 9px; border-radius:99px; font-size:0.75rem; font-weight:700; }
+.badge-low    { display:inline-block; background:#DCFCE7; color:#166534; padding:1px 9px; border-radius:99px; font-size:0.75rem; font-weight:700; }
+.badge-info   { display:inline-block; background:#DBEAFE; color:#1D4ED8; padding:1px 9px; border-radius:99px; font-size:0.75rem; font-weight:700; }
 
-/* ── 타임라인 ── */
+/* ══ 타임라인 ══ */
 .timeline-item {
-    border-left: 3px solid #1E40AF;
+    border-left: 3px solid #2563EB;
     padding-left: 1rem;
-    margin-bottom: 1.5rem;
+    margin-bottom: 1.4rem;
     position: relative;
 }
 .timeline-dot {
-    width: 12px; height: 12px;
-    background: #1E40AF;
+    width: 11px; height: 11px;
+    background: #2563EB;
     border-radius: 50%;
     position: absolute;
-    left: -7px; top: 4px;
+    left: -7px; top: 5px;
 }
 
-/* ── 점수 바 ── */
-.score-bar-wrap { background:#E2E8F0; border-radius:99px; height:8px; overflow:hidden; }
-.score-bar      { height:8px; border-radius:99px; }
+/* ══ 점수 바 ══ */
+.score-bar-wrap { background:#E2E8F0; border-radius:99px; height:7px; overflow:hidden; margin:4px 0 2px; }
+.score-bar      { height:7px; border-radius:99px; }
+
+/* ══ 행 구분선 ══ */
+.row-divider { border-top: 1px solid #F1F5F9; margin: 6px 0; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -238,6 +235,7 @@ def page_dashboard():
             st.markdown('<div class="section-title">📅 최근 미팅</div>', unsafe_allow_html=True)
             recent = (
                 db.query(MeetingRecord)
+                .options(joinedload(MeetingRecord.company), joinedload(MeetingRecord.analysis))
                 .order_by(desc(MeetingRecord.meeting_date))
                 .limit(7)
                 .all()
@@ -324,7 +322,12 @@ def page_company_management():
             filter_stage = st.selectbox("영업단계 필터", ["전체"] + SALES_STAGES, key="f_stage")
             filter_risk  = st.selectbox("리스크 필터", ["전체"] + IMPORTANCE, key="f_risk")
 
-            q = db.query(Company)
+            q = db.query(Company).options(
+                joinedload(Company.contacts),
+                joinedload(Company.meetings),
+                joinedload(Company.promises),
+                joinedload(Company.action_items),
+            )
             if search:
                 q = q.filter(
                     or_(
@@ -440,7 +443,13 @@ def page_company_management():
 
         # ── 담당자 관리 ──
         with tab_contact:
-            companies_all = db.query(Company).order_by(Company.name).all()
+            companies_all = db.query(Company).options(
+                joinedload(Company.contacts),
+                joinedload(Company.meetings).joinedload(MeetingRecord.analysis),
+                joinedload(Company.promises),
+                joinedload(Company.action_items),
+                joinedload(Company.customer_infos),
+            ).order_by(Company.name).all()
             if not companies_all:
                 st.info("고객사를 먼저 등록해주세요.")
             else:
@@ -498,7 +507,13 @@ def page_company_management():
 
         # ── 고객 취향·중요 정보 ──
         with tab_info:
-            companies_all2 = db.query(Company).order_by(Company.name).all()
+            companies_all2 = db.query(Company).options(
+                joinedload(Company.contacts),
+                joinedload(Company.meetings).joinedload(MeetingRecord.analysis),
+                joinedload(Company.promises),
+                joinedload(Company.action_items),
+                joinedload(Company.customer_infos),
+            ).order_by(Company.name).all()
             if not companies_all2:
                 st.info("고객사를 먼저 등록해주세요.")
             else:
@@ -586,7 +601,13 @@ def page_meeting_upload():
 
     db = get_db()
     try:
-        companies_all = db.query(Company).order_by(Company.name).all()
+        companies_all = db.query(Company).options(
+                joinedload(Company.contacts),
+                joinedload(Company.meetings).joinedload(MeetingRecord.analysis),
+                joinedload(Company.promises),
+                joinedload(Company.action_items),
+                joinedload(Company.customer_infos),
+            ).order_by(Company.name).all()
         if not companies_all:
             st.warning("고객사를 먼저 등록해주세요.")
             return
@@ -716,6 +737,12 @@ def page_meeting_results():
     try:
         meetings = (
             db.query(MeetingRecord)
+            .options(
+                joinedload(MeetingRecord.company),
+                joinedload(MeetingRecord.analysis),
+                joinedload(MeetingRecord.promises),
+                joinedload(MeetingRecord.action_items),
+            )
             .order_by(desc(MeetingRecord.meeting_date))
             .all()
         )
@@ -888,7 +915,13 @@ def page_timeline():
 
     db = get_db()
     try:
-        companies_all = db.query(Company).order_by(Company.name).all()
+        companies_all = db.query(Company).options(
+                joinedload(Company.contacts),
+                joinedload(Company.meetings).joinedload(MeetingRecord.analysis),
+                joinedload(Company.promises),
+                joinedload(Company.action_items),
+                joinedload(Company.customer_infos),
+            ).order_by(Company.name).all()
         if not companies_all:
             st.info("고객사를 먼저 등록해주세요.")
             return
@@ -919,6 +952,10 @@ def page_timeline():
         # 타임라인
         meetings = (
             db.query(MeetingRecord)
+            .options(
+                joinedload(MeetingRecord.analysis),
+                joinedload(MeetingRecord.promises),
+            )
             .filter(MeetingRecord.company_id == sel_company.id)
             .order_by(desc(MeetingRecord.meeting_date))
             .all()
@@ -1010,7 +1047,13 @@ def page_action_items():
             with c1:
                 filter_status = st.selectbox("상태 필터", ["전체"] + ACTION_STATUSES)
             with c2:
-                companies_all = db.query(Company).order_by(Company.name).all()
+                companies_all = db.query(Company).options(
+                joinedload(Company.contacts),
+                joinedload(Company.meetings).joinedload(MeetingRecord.analysis),
+                joinedload(Company.promises),
+                joinedload(Company.action_items),
+                joinedload(Company.customer_infos),
+            ).order_by(Company.name).all()
                 filter_company_a = st.selectbox(
                     "고객사 필터", [None] + companies_all,
                     format_func=lambda x: x.name if x else "전체", key="fa_company"
@@ -1096,7 +1139,13 @@ def page_action_items():
             with c1:
                 filter_ps = st.selectbox("상태 필터", ["전체"] + PROMISE_STATUSES)
             with c2:
-                companies_all2 = db.query(Company).order_by(Company.name).all()
+                companies_all2 = db.query(Company).options(
+                joinedload(Company.contacts),
+                joinedload(Company.meetings).joinedload(MeetingRecord.analysis),
+                joinedload(Company.promises),
+                joinedload(Company.action_items),
+                joinedload(Company.customer_infos),
+            ).order_by(Company.name).all()
                 filter_pc = st.selectbox(
                     "고객사 필터", [None] + companies_all2,
                     format_func=lambda x: x.name if x else "전체", key="fp_company"
@@ -1182,7 +1231,13 @@ def page_risk_analysis():
 
     db = get_db()
     try:
-        companies = db.query(Company).order_by(Company.name).all()
+        companies = db.query(Company).options(
+                joinedload(Company.contacts),
+                joinedload(Company.meetings).joinedload(MeetingRecord.analysis),
+                joinedload(Company.promises),
+                joinedload(Company.action_items),
+                joinedload(Company.customer_infos),
+            ).order_by(Company.name).all()
         if not companies:
             st.info("고객사를 먼저 등록해주세요.")
             return
@@ -1412,40 +1467,43 @@ PAGES = {
 }
 
 with st.sidebar:
-    st.markdown(
-        '<div style="text-align:center;padding:1rem 0 1.5rem;">'
-        '<div style="font-size:2.5rem;line-height:1">🎯</div>'
-        '<div style="color:#F1F5F9;font-size:1.1rem;font-weight:700;margin-top:0.4rem;">Sales Intelligence</div>'
-        '<div style="color:#94A3B8;font-size:0.75rem;margin-top:0.2rem;">영업 관리 시스템</div>'
-        '</div>',
-        unsafe_allow_html=True,
-    )
+    # 로고
+    st.markdown("""
+    <div style="padding:1.5rem 1rem 1rem;border-bottom:1px solid #1E293B;margin-bottom:0.5rem;">
+        <div style="font-size:2rem;line-height:1;margin-bottom:0.4rem;">🎯</div>
+        <div style="color:#F8FAFC;font-size:1.05rem;font-weight:700;letter-spacing:-0.3px;">Sales Intelligence</div>
+        <div style="color:#64748B;font-size:0.72rem;margin-top:2px;">영업 관리 시스템</div>
+    </div>
+    """, unsafe_allow_html=True)
 
-    # 메뉴 버튼 직접 구현 (라디오 대신 버튼으로 더 확실하게 표시)
     menu_items = list(PAGES.keys())
     if "selected_menu" not in st.session_state:
         st.session_state["selected_menu"] = menu_items[0]
 
+    # 메뉴 버튼 — 선택된 항목은 HTML로 강조
+    st.markdown("<div style='padding:0.3rem 0;'>", unsafe_allow_html=True)
     for item in menu_items:
         is_active = st.session_state["selected_menu"] == item
-        btn_style = (
-            "background:#3B82F6;color:#fff;border-radius:8px;padding:0.5rem 1rem;"
-            "margin:2px 0;width:100%;text-align:left;font-weight:700;border:none;cursor:pointer;"
-        ) if is_active else (
-            "background:transparent;color:#CBD5E1;border-radius:8px;padding:0.5rem 1rem;"
-            "margin:2px 0;width:100%;text-align:left;font-weight:400;border:none;cursor:pointer;"
-        )
-        if st.button(item, key=f"menu_{item}", use_container_width=True):
-            st.session_state["selected_menu"] = item
-            st.rerun()
+        if is_active:
+            # 선택된 항목: 파란 하이라이트 표시 후 버튼
+            st.markdown(
+                f'<div style="background:#1D4ED8;border-radius:8px;margin:1px 8px;">'
+                f'<p style="color:#FFFFFF;font-weight:700;font-size:0.88rem;'
+                f'padding:0.5rem 0.8rem;margin:0;pointer-events:none;">{item}</p></div>',
+                unsafe_allow_html=True,
+            )
+        else:
+            if st.button(item, key=f"menu_{item}", use_container_width=True):
+                st.session_state["selected_menu"] = item
+                st.rerun()
+    st.markdown("</div>", unsafe_allow_html=True)
 
     selected = st.session_state["selected_menu"]
 
-    st.markdown("<br>", unsafe_allow_html=True)
-    st.markdown(
-        '<div style="color:#475569;font-size:0.72rem;text-align:center;padding-bottom:1rem;">'
-        'Powered by Claude AI</div>',
-        unsafe_allow_html=True,
-    )
+    st.markdown("""
+    <div style="position:absolute;bottom:1rem;left:0;right:0;text-align:center;">
+        <span style="color:#334155;font-size:0.7rem;">Powered by Claude AI</span>
+    </div>
+    """, unsafe_allow_html=True)
 
 PAGES[selected]()

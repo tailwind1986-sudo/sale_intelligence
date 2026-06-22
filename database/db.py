@@ -9,7 +9,7 @@ _DB_PATH = Path(__file__).parent.parent / "data" / "sales_intelligence.db"
 _DB_PATH.parent.mkdir(exist_ok=True)
 
 _engine = create_engine(f"sqlite:///{_DB_PATH}", connect_args={"check_same_thread": False})
-SessionLocal = sessionmaker(bind=_engine, autoflush=False, autocommit=False)
+SessionLocal = sessionmaker(bind=_engine, autoflush=False, autocommit=False, expire_on_commit=False)
 
 
 def create_database() -> None:
