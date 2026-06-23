@@ -204,12 +204,12 @@ function renderWeek(week) {
 
   const bars = document.createElement("div");
   bars.className = "week-bars";
-  const segments = weekSegments(week).slice(0, 3);
-  for (const [idx, segment] of segments.entries()) {
+  const segments = assignSegmentLanes(weekSegments(week), 3);
+  for (const segment of segments) {
     const bar = document.createElement("button");
     bar.className = `week-event-bar ${segment.className}`;
     bar.style.gridColumn = `${segment.startCol} / ${segment.endCol + 1}`;
-    bar.style.gridRow = `${idx + 1}`;
+    bar.style.gridRow = `${segment.lane + 1}`;
     bar.style.background = segment.color;
     bar.textContent = segment.title;
     bar.onclick = event => {
@@ -221,6 +221,35 @@ function renderWeek(week) {
   }
   row.appendChild(bars);
   return row;
+}
+
+function assignSegmentLanes(segments, maxLanes) {
+  const lanes = Array.from({ length: maxLanes }, () => []);
+  const placed = [];
+  const ordered = [...segments].sort((a, b) => {
+    const spanA = a.endCol - a.startCol;
+    const spanB = b.endCol - b.startCol;
+    if (a.startCol !== b.startCol) return a.startCol - b.startCol;
+    return spanB - spanA;
+  });
+
+  for (const segment of ordered) {
+    for (let lane = 0; lane < maxLanes; lane++) {
+      const overlaps = lanes[lane].some(existing => (
+        existing.startCol <= segment.endCol && existing.endCol >= segment.startCol
+      ));
+      if (!overlaps) {
+        lanes[lane].push(segment);
+        placed.push({ ...segment, lane });
+        break;
+      }
+    }
+  }
+
+  return placed.sort((a, b) => {
+    if (a.lane !== b.lane) return a.lane - b.lane;
+    return a.startCol - b.startCol;
+  });
 }
 
 function weekSegments(week) {
@@ -512,7 +541,7 @@ $("deleteSchedule").onclick = deleteSchedule;
 for (const btn of document.querySelectorAll(".back")) btn.onclick = () => show(btn.dataset.target);
 
 if ("serviceWorker" in navigator) {
-  navigator.serviceWorker.register(`${BASE}/sw.js?v=20260624-tt5`, { scope: `${BASE}/` }).then(reg => reg.update()).catch(() => {});
+  navigator.serviceWorker.register(`${BASE}/sw.js?v=20260624-tt6`, { scope: `${BASE}/` }).then(reg => reg.update()).catch(() => {});
 }
 
 consumeUrlAuth();

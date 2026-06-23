@@ -12,11 +12,23 @@
 
 * { box-sizing: border-box; }
 
+html {
+  width: 100%;
+  max-width: 100%;
+  overflow-x: hidden;
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+
 body {
   margin: 0;
   background: var(--bg);
   color: var(--text);
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  width: 100%;
+  max-width: 100%;
+  overflow-x: hidden;
+  overscroll-behavior-x: none;
 }
 
 button, input, select, textarea {
@@ -32,16 +44,20 @@ button {
 
 #app {
   width: min(100%, 620px);
+  max-width: 100vw;
   min-height: 100vh;
+  min-height: 100dvh;
   margin: 0 auto;
   background: var(--surface);
+  overflow-x: hidden;
 }
 
 .hidden { display: none !important; }
 
 .screen {
   min-height: 100vh;
-  padding: max(56px, calc(env(safe-area-inset-top) + 16px)) 14px max(82px, env(safe-area-inset-bottom));
+  min-height: 100dvh;
+  padding: max(68px, calc(env(safe-area-inset-top, 0px) + 24px)) 14px max(82px, env(safe-area-inset-bottom, 0px));
 }
 
 .login-screen {
@@ -99,7 +115,7 @@ textarea {
   grid-template-columns: 46px 1fr 46px;
   align-items: center;
   gap: 8px;
-  margin-bottom: 12px;
+  margin-bottom: 10px;
 }
 
 .icon-btn {
@@ -115,8 +131,11 @@ textarea {
   min-height: 42px;
   background: transparent;
   text-align: left;
-  font-size: 1.55rem;
+  font-size: clamp(1.35rem, 7vw, 1.55rem);
   font-weight: 900;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .month-title::after {
@@ -516,9 +535,13 @@ textarea {
 }
 
 @media (max-width: 390px) {
-  .screen { padding-left: 10px; padding-right: 10px; }
+  .screen {
+    padding-top: max(72px, calc(env(safe-area-inset-top, 0px) + 28px));
+    padding-left: 10px;
+    padding-right: 10px;
+  }
   .day-cell { min-height: 96px; }
-  .week-event-bar { font-size: 0.62rem; }
+  .week-event-bar { font-size: 0.64rem; padding: 0 4px; }
   .item { grid-template-columns: 62px 4px 1fr auto; }
   .form-row { grid-template-columns: 58px 1fr 92px; }
 }

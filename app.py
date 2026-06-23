@@ -166,6 +166,42 @@ st.markdown("""
     max-width: 1400px;
 }
 
+html,
+body,
+[data-testid="stAppViewContainer"],
+.stApp {
+    max-width: 100vw !important;
+    overflow-x: hidden !important;
+    -webkit-text-size-adjust: 100%;
+    text-size-adjust: 100%;
+}
+
+@media (max-width: 640px) {
+    .main .block-container {
+        width: 100vw !important;
+        max-width: 100vw !important;
+        padding-left: 0.75rem !important;
+        padding-right: 0.75rem !important;
+        padding-top: max(1rem, env(safe-area-inset-top, 0px)) !important;
+    }
+
+    [data-testid="stHorizontalBlock"] {
+        max-width: 100% !important;
+        gap: 0.4rem !important;
+    }
+
+    [data-testid="stHorizontalBlock"] > div {
+        min-width: 0 !important;
+    }
+
+    input,
+    textarea,
+    select,
+    button {
+        font-size: 16px !important;
+    }
+}
+
 /* ══ 사이드바 ══ */
 [data-testid="stSidebar"],
 [data-testid="stSidebar"] > div:first-child,
