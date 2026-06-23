@@ -8,7 +8,7 @@ from __future__ import annotations
 import os
 import hashlib
 import hmac
-from calendar import monthrange
+from calendar import monthcalendar, monthrange
 from datetime import date, datetime, timedelta
 from pathlib import Path
 from zoneinfo import ZoneInfo
@@ -1774,6 +1774,263 @@ def _schedule_form(db, companies_all, form_key, default_date=None,
     return False
 
 
+def _month_bounds(year: int, month: int) -> tuple[datetime, datetime]:
+    start = datetime(year, month, 1)
+    end = datetime(year, month, monthrange(year, month)[1], 23, 59, 59)
+    return start, end
+
+
+def _schedule_on_day(schedule: Schedule, day: date) -> bool:
+    return schedule.start_dt.date() <= day <= schedule.end_dt.date()
+
+
+def _load_calendar_window(db, year: int, month: int, company_id: int | None = None):
+    month_start, month_end = _month_bounds(year, month)
+    schedules_q = db.query(Schedule).options(joinedload(Schedule.company)).filter(
+        Schedule.start_dt <= month_end,
+        Schedule.end_dt >= month_start,
+    )
+    meetings_q = db.query(MeetingRecord).options(
+        joinedload(MeetingRecord.company),
+        joinedload(MeetingRecord.analysis),
+    ).filter(
+        MeetingRecord.meeting_date >= month_start.date(),
+        MeetingRecord.meeting_date <= month_end.date(),
+    )
+    if company_id:
+        schedules_q = schedules_q.filter(Schedule.company_id == company_id)
+        meetings_q = meetings_q.filter(MeetingRecord.company_id == company_id)
+    return (
+        schedules_q.order_by(Schedule.start_dt).all(),
+        meetings_q.order_by(MeetingRecord.meeting_date.desc()).all(),
+    )
+
+
+def _render_mobile_calendar_stack(db, companies_all):
+    st.markdown("""
+<style>
+@media (max-width: 640px) {
+  .main .block-container { padding-left: 0.7rem; padding-right: 0.7rem; }
+  div[data-testid="stButton"] > button {
+    min-height: 2.45rem;
+    padding: 0.35rem 0.25rem;
+    font-size: 0.78rem;
+    line-height: 1.15;
+    border-radius: 8px;
+    white-space: pre-line;
+  }
+  div[data-testid="stHorizontalBlock"] { gap: 0.25rem; }
+}
+</style>
+""", unsafe_allow_html=True)
+
+    today = date.today()
+    st.session_state.setdefault("mobile_cal_year", today.year)
+    st.session_state.setdefault("mobile_cal_month", today.month)
+    st.session_state.setdefault("mobile_cal_day", today.isoformat())
+
+    year = st.session_state["mobile_cal_year"]
+    month = st.session_state["mobile_cal_month"]
+
+    prev_col, title_col, next_col = st.columns([1, 3, 1])
+    if prev_col.button("‹", key="mobile_prev_month", use_container_width=True):
+        if month == 1:
+            year, month = year - 1, 12
+        else:
+            month -= 1
+        st.session_state["mobile_cal_year"] = year
+        st.session_state["mobile_cal_month"] = month
+        st.session_state["mobile_cal_day"] = date(year, month, 1).isoformat()
+        st.session_state.pop("mobile_detail_id", None)
+        st.session_state.pop("mobile_detail_kind", None)
+        st.rerun()
+    title_col.markdown(f"### {year}년 {month}월")
+    if next_col.button("›", key="mobile_next_month", use_container_width=True):
+        if month == 12:
+            year, month = year + 1, 1
+        else:
+            month += 1
+        st.session_state["mobile_cal_year"] = year
+        st.session_state["mobile_cal_month"] = month
+        st.session_state["mobile_cal_day"] = date(year, month, 1).isoformat()
+        st.session_state.pop("mobile_detail_id", None)
+        st.session_state.pop("mobile_detail_kind", None)
+        st.rerun()
+
+    filter_company = st.selectbox(
+        "고객사",
+        [None] + companies_all,
+        format_func=lambda x: x.name if x else "전체 고객사",
+        key="mobile_company_filter",
+        label_visibility="collapsed",
+    )
+    schedules, meetings = _load_calendar_window(
+        db,
+        year,
+        month,
+        company_id=filter_company.id if filter_company else None,
+    )
+
+    schedule_count_by_day: dict[date, int] = {}
+    for sched in schedules:
+        month_start, month_end = _month_bounds(year, month)
+        cur = max(sched.start_dt.date(), month_start.date())
+        last = min(sched.end_dt.date(), month_end.date())
+        while cur <= last:
+            schedule_count_by_day[cur] = schedule_count_by_day.get(cur, 0) + 1
+            cur += timedelta(days=1)
+
+    meeting_count_by_day: dict[date, int] = {}
+    for meeting in meetings:
+        if meeting.meeting_date:
+            meeting_count_by_day[meeting.meeting_date] = meeting_count_by_day.get(meeting.meeting_date, 0) + 1
+
+    st.caption(f"일정 {len(schedules)}건 · 미팅기록 {len(meetings)}건")
+    weekday_cols = st.columns(7)
+    for col, label in zip(weekday_cols, ["월", "화", "수", "목", "금", "토", "일"]):
+        col.markdown(f"<div style='text-align:center;color:#6B7280;font-size:0.8rem;font-weight:700'>{label}</div>", unsafe_allow_html=True)
+
+    selected_day = date.fromisoformat(st.session_state["mobile_cal_day"])
+    for week in monthcalendar(year, month):
+        cols = st.columns(7)
+        for col, day_num in zip(cols, week):
+            if day_num == 0:
+                col.markdown("<div style='height:42px'></div>", unsafe_allow_html=True)
+                continue
+            day = date(year, month, day_num)
+            sched_count = schedule_count_by_day.get(day, 0)
+            meet_count = meeting_count_by_day.get(day, 0)
+            marker = ""
+            if sched_count:
+                marker += f" 일정{sched_count}"
+            if meet_count:
+                marker += f" 미팅{meet_count}"
+            label = f"{day_num}\n{marker}" if marker else f"{day_num}"
+            button_type = "primary" if day == selected_day else "secondary"
+            if col.button(label, key=f"mobile_day_{day.isoformat()}", use_container_width=True, type=button_type):
+                st.session_state["mobile_cal_day"] = day.isoformat()
+                st.session_state.pop("mobile_detail_id", None)
+                st.session_state.pop("mobile_detail_kind", None)
+                st.session_state.pop("mobile_add_mode", None)
+                st.rerun()
+
+    st.divider()
+    detail_id = st.session_state.get("mobile_detail_id")
+    detail_kind = st.session_state.get("mobile_detail_kind")
+
+    if detail_id and detail_kind == "schedule":
+        sched = db.get(Schedule, detail_id)
+        if not sched:
+            st.warning("일정을 찾을 수 없습니다.")
+            st.session_state.pop("mobile_detail_id", None)
+            return
+        if st.button("← 선택일로", key="mobile_back_schedule", use_container_width=True):
+            st.session_state.pop("mobile_detail_id", None)
+            st.session_state.pop("mobile_detail_kind", None)
+            st.session_state.pop("mobile_show_edit", None)
+            st.rerun()
+        st.markdown(f"### {sched.title}")
+        date_label = sched.start_dt.strftime("%Y-%m-%d")
+        if sched.end_dt.date() != sched.start_dt.date():
+            date_label += f" ~ {sched.end_dt.strftime('%Y-%m-%d')}"
+        st.caption(date_label)
+        if not sched.all_day:
+            st.write(f"{sched.start_dt.strftime('%H:%M')} → {sched.end_dt.strftime('%H:%M')}")
+        else:
+            st.write("종일")
+        if sched.company:
+            st.write(f"**고객사:** {sched.company.name}")
+        if sched.description:
+            st.write(sched.description)
+        edit_col, del_col = st.columns(2)
+        if edit_col.button("수정", key="mobile_edit_schedule", use_container_width=True):
+            st.session_state["mobile_show_edit"] = True
+        if del_col.button("삭제", key="mobile_delete_schedule", type="primary", use_container_width=True):
+            db.delete(sched)
+            db.commit()
+            st.session_state.pop("mobile_detail_id", None)
+            st.session_state.pop("mobile_detail_kind", None)
+            st.toast("삭제되었습니다.", icon="🗑️")
+            st.rerun()
+        if st.session_state.get("mobile_show_edit"):
+            st.divider()
+            if _schedule_form(db, companies_all, "mobile_edit_form", editing=sched):
+                st.session_state.pop("mobile_detail_id", None)
+                st.session_state.pop("mobile_detail_kind", None)
+                st.session_state.pop("mobile_show_edit", None)
+                st.toast("수정되었습니다.", icon="✅")
+                st.rerun()
+        return
+
+    if detail_id and detail_kind == "meeting":
+        meeting = db.query(MeetingRecord).options(
+            joinedload(MeetingRecord.company),
+            joinedload(MeetingRecord.analysis),
+        ).filter(MeetingRecord.id == detail_id).first()
+        if not meeting:
+            st.warning("미팅 기록을 찾을 수 없습니다.")
+            st.session_state.pop("mobile_detail_id", None)
+            return
+        if st.button("← 선택일로", key="mobile_back_meeting", use_container_width=True):
+            st.session_state.pop("mobile_detail_id", None)
+            st.session_state.pop("mobile_detail_kind", None)
+            st.rerun()
+        st.markdown(f"### 미팅: {meeting.company.name if meeting.company else '-'}")
+        st.caption(fmt_date(meeting.meeting_date))
+        if meeting.attendees:
+            st.write(f"**참석자:** {meeting.attendees}")
+        if meeting.analysis and meeting.analysis.one_line_summary:
+            st.info(meeting.analysis.one_line_summary)
+        elif meeting.raw_text:
+            st.write((meeting.raw_text or "")[:300])
+        if st.button("미팅 요약에서 보기", key="mobile_go_meeting", use_container_width=True):
+            st.session_state["last_meeting_id"] = meeting.id
+            st.session_state["selected_menu"] = "📋 미팅 요약 결과"
+            st.rerun()
+        return
+
+    selected_day = date.fromisoformat(st.session_state["mobile_cal_day"])
+    weekday_ko = ["월", "화", "수", "목", "금", "토", "일"]
+    st.markdown(f"### {selected_day.month}월 {selected_day.day}일 ({weekday_ko[selected_day.weekday()]})")
+    if st.button("+ 일정 추가", key="mobile_add_schedule", type="primary", use_container_width=True):
+        st.session_state["mobile_add_mode"] = True
+        st.rerun()
+    if st.session_state.get("mobile_add_mode"):
+        if _schedule_form(db, companies_all, "mobile_add_form", default_date=selected_day.isoformat()):
+            st.session_state.pop("mobile_add_mode", None)
+            st.toast("일정이 저장되었습니다.", icon="✅")
+            st.rerun()
+        if st.button("추가 취소", key="mobile_cancel_add", use_container_width=True):
+            st.session_state.pop("mobile_add_mode", None)
+            st.rerun()
+        st.divider()
+
+    day_schedules = [s for s in schedules if _schedule_on_day(s, selected_day)]
+    day_meetings = [m for m in meetings if m.meeting_date == selected_day]
+    if not day_schedules and not day_meetings:
+        st.info("선택한 날짜의 일정이나 미팅 기록이 없습니다.")
+
+    for sched in day_schedules:
+        time_label = "종일" if sched.all_day else f"{sched.start_dt.strftime('%H:%M')} → {sched.end_dt.strftime('%H:%M')}"
+        title = f"{time_label} · {sched.title}"
+        if sched.company:
+            title += f" · {sched.company.name}"
+        if st.button(title, key=f"mobile_sched_{sched.id}", use_container_width=True):
+            st.session_state["mobile_detail_kind"] = "schedule"
+            st.session_state["mobile_detail_id"] = sched.id
+            st.session_state.pop("mobile_add_mode", None)
+            st.rerun()
+
+    for meeting in day_meetings:
+        company_name = meeting.company.name if meeting.company else "-"
+        summary = meeting.analysis.one_line_summary if meeting.analysis else (meeting.meeting_type or "미팅")
+        if st.button(f"미팅기록 · {company_name} · {summary}", key=f"mobile_meeting_{meeting.id}", use_container_width=True):
+            st.session_state["mobile_detail_kind"] = "meeting"
+            st.session_state["mobile_detail_id"] = meeting.id
+            st.session_state.pop("mobile_add_mode", None)
+            st.rerun()
+
+
 def page_calendar():
     from streamlit_calendar import calendar as st_calendar
     from services.telegram_service import check_and_send_reminders, send_message, _get_token, _get_chat_id
@@ -1787,13 +2044,16 @@ def page_calendar():
 
         calendar_view = st.radio(
             "보기",
-            ["📅 캘린더", "📋 일정 목록", "⚙️ 텔레그램 설정"],
+            ["모바일 스택", "데스크톱 캘린더", "일정 목록", "텔레그램 설정"],
             horizontal=True,
             label_visibility="collapsed",
         )
 
+        if calendar_view == "모바일 스택":
+            _render_mobile_calendar_stack(db, companies_all)
+
         # ── 캘린더 뷰 ──
-        if calendar_view == "📅 캘린더":
+        if calendar_view == "데스크톱 캘린더":
             # ── 년/월 드롭다운 네비게이터 ──
             now = datetime.now()
             nav_col1, nav_col2 = st.columns(2)
@@ -2128,7 +2388,7 @@ def page_calendar():
             st.caption("일정은 라벨 색상으로, 미팅 기록은 청록색 이벤트로 표시됩니다.")
 
         # ── 일정 목록 ──
-        if calendar_view == "📋 일정 목록":
+        if calendar_view == "일정 목록":
             col_f1, col_f2 = st.columns(2)
             filter_upcoming = col_f1.checkbox("앞으로의 일정만", value=True)
             filter_company  = col_f2.selectbox("고객사 필터", [None] + companies_all,
@@ -2167,7 +2427,7 @@ def page_calendar():
                                 st.rerun()
 
         # ── 텔레그램 설정 ──
-        if calendar_view == "⚙️ 텔레그램 설정":
+        if calendar_view == "텔레그램 설정":
             st.subheader("⚙️ 텔레그램 알림 설정")
 
             token = _get_token()
