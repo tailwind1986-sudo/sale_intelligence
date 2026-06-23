@@ -13,6 +13,26 @@ class Base(DeclarativeBase):
     pass
 
 
+class Schedule(Base):
+    __tablename__ = "schedules"
+
+    id = Column(Integer, primary_key=True)
+    title = Column(String(200), nullable=False)
+    description = Column(Text)
+    start_dt = Column(DateTime, nullable=False)
+    end_dt = Column(DateTime, nullable=False)
+    all_day = Column(Boolean, default=False)
+    color = Column(String(20), default="#1E40AF")
+    company_id = Column(Integer, ForeignKey("companies.id"), nullable=True)
+    remind_enabled = Column(Boolean, default=True)
+    remind_minutes = Column(Integer, default=1440)   # 기본 1일 전(1440분)
+    remind_sent = Column(Boolean, default=False)
+    created_at = Column(DateTime, default=datetime.now)
+    updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
+
+    company = relationship("Company", backref="schedules")
+
+
 class Company(Base):
     __tablename__ = "companies"
 

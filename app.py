@@ -26,6 +26,7 @@ from database.models import (
     MeetingAnalysis,
     MeetingRecord,
     Promise,
+    Schedule,
 )
 from services.ai_analyzer import analyze_meeting_transcript
 
@@ -1512,6 +1513,245 @@ def page_search():
         db.close()
 
 
+# ─── 일정 관리 ───────────────────────────────────────────────────────────────
+
+REMIND_OPTIONS = {
+    "30분 전": 30,
+    "1시간 전": 60,
+    "3시간 전": 180,
+    "하루 전": 1440,
+    "2일 전": 2880,
+}
+EVENT_COLORS = {
+    "파랑": "#1E40AF",
+    "초록": "#059669",
+    "빨강": "#DC2626",
+    "주황": "#D97706",
+    "보라": "#7C3AED",
+    "회색": "#64748B",
+}
+
+
+def page_calendar():
+    from streamlit_calendar import calendar as st_calendar
+    from services.telegram_service import check_and_send_reminders, send_message, _get_token, _get_chat_id
+    from database.models import Schedule
+
+    st.title("🗓️ 일정 관리")
+
+    db = get_db()
+    try:
+        # ── 알림 자동 체크 (페이지 로드 시) ──
+        if _get_token() and _get_chat_id():
+            sent = check_and_send_reminders(db)
+            if sent:
+                st.toast(f"텔레그램 알림 {sent}건 전송됨", icon="📨")
+
+        tab_cal, tab_add, tab_list, tab_settings = st.tabs(
+            ["📅 캘린더", "➕ 일정 추가", "📋 일정 목록", "⚙️ 텔레그램 설정"]
+        )
+
+        # ── 캘린더 뷰 ──
+        with tab_cal:
+            schedules = db.query(Schedule).options(
+                __import__("sqlalchemy.orm", fromlist=["joinedload"]).joinedload(Schedule.company)
+            ).all()
+
+            events = []
+            for s in schedules:
+                ev = {
+                    "id": str(s.id),
+                    "title": s.title,
+                    "color": s.color or "#1E40AF",
+                    "allDay": s.all_day,
+                }
+                if s.all_day:
+                    ev["start"] = s.start_dt.strftime("%Y-%m-%d")
+                    ev["end"] = s.end_dt.strftime("%Y-%m-%d")
+                else:
+                    ev["start"] = s.start_dt.strftime("%Y-%m-%dT%H:%M:%S")
+                    ev["end"] = s.end_dt.strftime("%Y-%m-%dT%H:%M:%S")
+                if s.company:
+                    ev["title"] = f"[{s.company.name}] {s.title}"
+                events.append(ev)
+
+            calendar_options = {
+                "initialView": "dayGridMonth",
+                "headerToolbar": {
+                    "left": "prev,next today",
+                    "center": "title",
+                    "right": "dayGridMonth,timeGridWeek,timeGridDay,listWeek",
+                },
+                "locale": "ko",
+                "height": 650,
+                "selectable": True,
+                "editable": False,
+            }
+            custom_css = """
+                .fc-event { cursor: pointer; border-radius: 4px; font-size: 0.82rem; }
+                .fc-toolbar-title { font-size: 1.2rem !important; }
+                .fc-today-button { text-transform: capitalize !important; }
+            """
+            result = st_calendar(events=events, options=calendar_options, custom_css=custom_css, key="main_cal")
+
+            if result and result.get("eventClick"):
+                ev_id = int(result["eventClick"]["event"]["id"])
+                sel = db.get(Schedule, ev_id)
+                if sel:
+                    with st.expander(f"📌 {sel.title}", expanded=True):
+                        c1, c2 = st.columns(2)
+                        c1.write(f"**시작:** {sel.start_dt.strftime('%Y-%m-%d %H:%M') if not sel.all_day else sel.start_dt.strftime('%Y-%m-%d')}")
+                        c2.write(f"**종료:** {sel.end_dt.strftime('%Y-%m-%d %H:%M') if not sel.all_day else sel.end_dt.strftime('%Y-%m-%d')}")
+                        if sel.company:
+                            st.write(f"**고객사:** {sel.company.name}")
+                        if sel.description:
+                            st.write(f"**내용:** {sel.description}")
+                        remind_label = next((k for k, v in REMIND_OPTIONS.items() if v == sel.remind_minutes), "사용자 정의")
+                        st.write(f"**알림:** {'켜짐 (' + remind_label + ')' if sel.remind_enabled else '꺼짐'}")
+                        if st.button("🗑️ 이 일정 삭제", key=f"del_ev_{ev_id}"):
+                            db.delete(sel)
+                            db.commit()
+                            st.toast("삭제되었습니다.", icon="🗑️")
+                            st.rerun()
+
+        # ── 일정 추가 ──
+        with tab_add:
+            companies_all = db.query(Company).order_by(Company.name).all()
+
+            st.subheader("새 일정 추가")
+            with st.form("schedule_form", clear_on_submit=True):
+                title = st.text_input("제목 *")
+                description = st.text_area("내용/메모")
+
+                c1, c2 = st.columns(2)
+                with c1:
+                    all_day = st.checkbox("종일 일정")
+                    start_date = st.date_input("시작 날짜", value=date.today())
+                    if not all_day:
+                        start_time = st.time_input("시작 시간", value=datetime.now().replace(minute=0, second=0).time())
+                with c2:
+                    color_label = st.selectbox("색상", list(EVENT_COLORS.keys()))
+                    end_date = st.date_input("종료 날짜", value=date.today())
+                    if not all_day:
+                        end_time = st.time_input("종료 시간", value=datetime.now().replace(hour=datetime.now().hour+1, minute=0, second=0).time() if datetime.now().hour < 23 else datetime.now().replace(minute=0, second=0).time())
+
+                company_opts = [None] + companies_all
+                linked_company = st.selectbox(
+                    "고객사 연결 (선택)",
+                    company_opts,
+                    format_func=lambda x: x.name if x else "없음",
+                )
+
+                st.divider()
+                remind_enabled = st.checkbox("텔레그램 알림", value=True)
+                remind_label = st.selectbox("알림 시간", list(REMIND_OPTIONS.keys()), index=3, disabled=not remind_enabled)
+
+                if st.form_submit_button("💾 일정 저장"):
+                    if not title:
+                        st.error("제목은 필수입니다.")
+                    else:
+                        if all_day:
+                            start_dt = datetime.combine(start_date, datetime.min.time())
+                            end_dt = datetime.combine(end_date, datetime.min.time())
+                        else:
+                            start_dt = datetime.combine(start_date, start_time)
+                            end_dt = datetime.combine(end_date, end_time)
+
+                        db.add(Schedule(
+                            title=title,
+                            description=description or None,
+                            start_dt=start_dt,
+                            end_dt=end_dt,
+                            all_day=all_day,
+                            color=EVENT_COLORS[color_label],
+                            company_id=linked_company.id if linked_company else None,
+                            remind_enabled=remind_enabled,
+                            remind_minutes=REMIND_OPTIONS[remind_label],
+                        ))
+                        db.commit()
+                        st.toast("일정이 저장되었습니다.", icon="✅")
+                        st.rerun()
+
+        # ── 일정 목록 ──
+        with tab_list:
+            schedules_all = db.query(Schedule).options(
+                __import__("sqlalchemy.orm", fromlist=["joinedload"]).joinedload(Schedule.company)
+            ).order_by(Schedule.start_dt).all()
+
+            if not schedules_all:
+                st.info("등록된 일정이 없습니다.")
+            else:
+                for s in schedules_all:
+                    passed = s.start_dt < datetime.now()
+                    time_str = s.start_dt.strftime("%Y-%m-%d %H:%M") if not s.all_day else s.start_dt.strftime("%Y-%m-%d (종일)")
+                    label = f"{'~~' if passed else ''}📅 {time_str} | {s.title}{'~~' if passed else ''}"
+                    with st.expander(label):
+                        c1, c2 = st.columns(2)
+                        c1.write(f"**시작:** {time_str}")
+                        c2.write(f"**종료:** {s.end_dt.strftime('%Y-%m-%d %H:%M') if not s.all_day else s.end_dt.strftime('%Y-%m-%d')}")
+                        if s.company:
+                            st.write(f"**고객사:** {s.company.name}")
+                        if s.description:
+                            st.write(f"**내용:** {s.description}")
+                        remind_lbl = next((k for k, v in REMIND_OPTIONS.items() if v == s.remind_minutes), f"{s.remind_minutes}분 전")
+                        st.write(f"**알림:** {'✅ ' + remind_lbl if s.remind_enabled else '❌ 꺼짐'} {'(전송완료)' if s.remind_sent else ''}")
+                        if st.button("🗑️ 삭제", key=f"del_sched_{s.id}"):
+                            db.delete(s)
+                            db.commit()
+                            st.toast("삭제되었습니다.", icon="🗑️")
+                            st.rerun()
+
+        # ── 텔레그램 설정 ──
+        with tab_settings:
+            st.subheader("⚙️ 텔레그램 알림 설정")
+
+            token = _get_token()
+            chat_id = _get_chat_id()
+
+            if token and chat_id:
+                st.success(f"✅ 텔레그램 연동 완료 (Chat ID: {chat_id})")
+            else:
+                st.warning("텔레그램이 연동되지 않았습니다.")
+
+            st.divider()
+            st.markdown("""
+### 설정 방법
+
+1. **봇 생성**: 텔레그램에서 [@BotFather](https://t.me/BotFather) 검색 → `/newbot` → 봇 이름 설정 → **Token** 복사
+
+2. **Chat ID 확인**:
+   - 생성한 봇에게 아무 메시지 전송
+   - 브라우저에서 아래 URL 접속 (토큰 교체):
+     ```
+     https://api.telegram.org/bot[YOUR_TOKEN]/getUpdates
+     ```
+   - 결과에서 `"id"` 값이 Chat ID
+
+3. **Streamlit Secrets에 추가**:
+   ```toml
+   TELEGRAM_BOT_TOKEN = "1234567890:ABCdef..."
+   TELEGRAM_CHAT_ID = "123456789"
+   ```
+
+4. 앱 재시작 후 아래 버튼으로 테스트
+""")
+
+            if st.button("📨 테스트 메시지 전송"):
+                if not token:
+                    st.error("TELEGRAM_BOT_TOKEN이 Secrets에 없습니다.")
+                elif not chat_id:
+                    st.error("TELEGRAM_CHAT_ID가 Secrets에 없습니다.")
+                else:
+                    ok = send_message("✅ Sales Intelligence 알림 테스트 메시지입니다!")
+                    if ok:
+                        st.toast("테스트 메시지 전송 성공!", icon="📨")
+                    else:
+                        st.error("전송 실패. Token 또는 Chat ID를 확인해주세요.")
+
+    finally:
+        db.close()
+
+
 # ─── 메인 ────────────────────────────────────────────────────────────────────
 
 PAGES = {
@@ -1523,6 +1763,7 @@ PAGES = {
     "✅ 액션아이템 관리":     page_action_items,
     "⚠️ 리스크 분석":        page_risk_analysis,
     "🔍 통합 검색":           page_search,
+    "🗓️ 일정 관리":           page_calendar,
 }
 
 with st.sidebar:
