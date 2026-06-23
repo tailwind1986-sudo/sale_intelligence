@@ -315,12 +315,27 @@ def page_company_management():
 
     db = get_db()
     try:
-        tab_list, tab_add, tab_contact, tab_info = st.tabs(
-            ["고객사 목록", "고객사 등록/수정", "담당자 관리", "고객 취향·중요정보"]
+        # 수정 버튼 클릭 시 자동 섹션 전환을 위해 tabs 대신 radio 사용
+        if "company_section" not in st.session_state:
+            st.session_state["company_section"] = "고객사 목록"
+        if st.session_state.get("edit_company_id") and st.session_state.get("_goto_edit"):
+            st.session_state["company_section"] = "고객사 등록/수정"
+            st.session_state.pop("_goto_edit", None)
+
+        section = st.radio(
+            "섹션",
+            ["고객사 목록", "고객사 등록/수정", "담당자 관리", "고객 취향·중요정보"],
+            horizontal=True,
+            index=["고객사 목록", "고객사 등록/수정", "담당자 관리", "고객 취향·중요정보"].index(
+                st.session_state["company_section"]
+            ),
+            key="company_section",
+            label_visibility="collapsed",
         )
+        st.divider()
 
         # ── 목록 ──
-        with tab_list:
+        if section == "고객사 목록":
             search = st.text_input("🔍 검색 (고객사명 / 담당자명)", key="company_search")
             filter_type  = st.selectbox("사업구분 필터", ["전체"] + BUSINESS_TYPES, key="f_type")
             filter_stage = st.selectbox("영업단계 필터", ["전체"] + SALES_STAGES, key="f_stage")
@@ -369,7 +384,8 @@ def page_company_management():
                     btn_col1, btn_col2 = st.columns(2)
                     if btn_col1.button("✏️ 수정", key=f"edit_{c.id}"):
                         st.session_state["edit_company_id"] = c.id
-                        st.session_state["active_tab"] = "고객사 등록/수정"
+                        st.session_state["company_section"] = "고객사 등록/수정"
+                        st.session_state["_goto_edit"] = True
                         st.rerun()
                     if btn_col2.button("🗑️ 삭제", key=f"del_{c.id}"):
                         st.session_state[f"confirm_del_{c.id}"] = True
@@ -383,7 +399,7 @@ def page_company_management():
                             st.rerun()
 
         # ── 등록/수정 ──
-        with tab_add:
+        if section == "고객사 등록/수정":
             edit_id = st.session_state.get("edit_company_id")
             editing = db.get(Company, edit_id) if edit_id else None
 
@@ -446,7 +462,7 @@ def page_company_management():
                 st.rerun()
 
         # ── 담당자 관리 ──
-        with tab_contact:
+        if section == "담당자 관리":
             companies_all = db.query(Company).options(
                 joinedload(Company.contacts),
                 joinedload(Company.meetings).joinedload(MeetingRecord.analysis),
@@ -510,7 +526,7 @@ def page_company_management():
                             st.rerun()
 
         # ── 고객 취향·중요 정보 ──
-        with tab_info:
+        if section == "고객 취향·중요정보":
             companies_all2 = db.query(Company).options(
                 joinedload(Company.contacts),
                 joinedload(Company.meetings).joinedload(MeetingRecord.analysis),
