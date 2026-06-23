@@ -147,9 +147,15 @@ textarea {
 }
 
 .weekday-row,
-.month-grid {
+.week-days,
+.week-bars {
   display: grid;
   grid-template-columns: repeat(7, minmax(0, 1fr));
+}
+
+.month-grid {
+  display: flex;
+  flex-direction: column;
 }
 
 .weekday-row {
@@ -162,6 +168,10 @@ textarea {
   color: #8b91a0;
   font-size: 0.76rem;
   font-weight: 800;
+}
+
+.month-week {
+  position: relative;
 }
 
 .day-cell {
@@ -196,43 +206,54 @@ textarea {
   line-height: 23px;
 }
 
-.event-chip {
-  display: block;
-  width: calc(100% + 4px);
-  margin-top: 2px;
-  padding: 1px 3px;
+.week-bars {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 34px;
+  z-index: 2;
+  grid-auto-rows: 18px;
+  row-gap: 2px;
+  pointer-events: none;
+}
+
+.week-event-bar {
+  min-width: 0;
+  min-height: 18px;
+  margin: 0 2px;
+  padding: 0 5px;
   border-radius: 4px;
   color: #fff;
-  font-size: 0.64rem;
+  font-size: 0.68rem;
   font-weight: 800;
-  line-height: 1.25;
+  line-height: 18px;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  text-align: left;
+  pointer-events: auto;
 }
 
-.event-chip.start {
-  margin-right: -2px;
+.week-event-bar.start {
+  margin-right: 0;
   border-radius: 4px 0 0 4px;
 }
 
-.event-chip.mid {
-  width: calc(100% + 6px);
-  margin-left: -3px;
-  margin-right: -3px;
+.week-event-bar.mid {
+  margin-left: 0;
+  margin-right: 0;
   border-radius: 0;
 }
 
-.event-chip.end {
-  margin-left: -2px;
+.week-event-bar.end {
+  margin-left: 0;
   border-radius: 0 4px 4px 0;
 }
 
-.event-chip.single {
+.week-event-bar.single {
   border-radius: 4px;
 }
 
-.meeting-chip { opacity: 0.88; }
 .more-chip {
   color: #6b7280;
   background: transparent;
@@ -497,7 +518,7 @@ textarea {
 @media (max-width: 390px) {
   .screen { padding-left: 10px; padding-right: 10px; }
   .day-cell { min-height: 74px; }
-  .event-chip { font-size: 0.58rem; }
+  .week-event-bar { font-size: 0.62rem; }
   .item { grid-template-columns: 62px 4px 1fr auto; }
   .form-row { grid-template-columns: 58px 1fr 92px; }
 }

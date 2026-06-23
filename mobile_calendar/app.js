@@ -155,61 +155,132 @@ function renderMonth() {
   const grid = $("monthGrid");
   grid.innerHTML = "";
 
+  for (const week of monthWeeks()) grid.appendChild(renderWeek(week));
+}
+
+function monthWeeks() {
+  const weeks = [];
   const first = new Date(state.year, state.month - 1, 1);
   const lastDay = new Date(state.year, state.month, 0).getDate();
-  const offset = (first.getDay() + 6) % 7;
-  for (let i = 0; i < offset; i++) grid.appendChild(emptyCell());
-
+  let week = Array((first.getDay() + 6) % 7).fill(null);
   for (let day = 1; day <= lastDay; day++) {
-    const d = new Date(state.year, state.month - 1, day);
-    const iso = isoDate(d);
-    const items = itemsForDay(iso);
+    week.push(isoDate(new Date(state.year, state.month - 1, day)));
+    if (week.length === 7) {
+      weeks.push(week);
+      week = [];
+    }
+  }
+  if (week.length) weeks.push([...week, ...Array(7 - week.length).fill(null)]);
+  return weeks;
+}
+
+function renderWeek(week) {
+  const row = document.createElement("section");
+  row.className = "month-week";
+
+  const days = document.createElement("div");
+  days.className = "week-days";
+  for (const iso of week) {
+    if (!iso) {
+      const empty = document.createElement("div");
+      empty.className = "day-cell empty";
+      days.appendChild(empty);
+      continue;
+    }
+    const d = parseLocalDate(iso);
     const cell = document.createElement("button");
     cell.className = "day-cell";
     if (iso === state.selectedDate) cell.classList.add("selected");
     if (iso === isoDate(new Date())) cell.classList.add("today");
-    cell.innerHTML = `<div class="day-num">${day}</div>${renderMonthChips(items, iso)}`;
+    cell.innerHTML = `<div class="day-num">${d.getDate()}</div>`;
     cell.onclick = () => {
       state.selectedDate = iso;
       renderMonth();
       renderDay();
     };
-    grid.appendChild(cell);
+    days.appendChild(cell);
   }
-}
+  row.appendChild(days);
 
-function emptyCell() {
-  const cell = document.createElement("div");
-  cell.className = "day-cell empty";
-  return cell;
-}
-
-function renderMonthChips(items, iso) {
-  const visible = items.slice(0, 3).map(item => {
-    const color = item.kind === "meeting" ? "#14B8A6" : item.color || "#3B82F6";
-    const segment = chipSegment(item, iso);
-    const text = segment.showTitle ? escapeHtml(item.title) : "&nbsp;";
-    const cls = ["event-chip", item.kind === "meeting" ? "meeting-chip" : "", segment.className].filter(Boolean).join(" ");
-    return `<span class="${cls}" style="background:${escapeAttr(color)}">${text}</span>`;
-  }).join("");
-  const more = items.length > 3 ? `<span class="more-chip">+${items.length - 3}</span>` : "";
-  return visible + more;
-}
-
-function chipSegment(item, iso) {
-  if (item.kind !== "schedule" || item.start_date === item.end_date) {
-    return { className: "single", showTitle: true };
+  const bars = document.createElement("div");
+  bars.className = "week-bars";
+  const segments = weekSegments(week).slice(0, 3);
+  for (const [idx, segment] of segments.entries()) {
+    const bar = document.createElement("button");
+    bar.className = `week-event-bar ${segment.className}`;
+    bar.style.gridColumn = `${segment.startCol} / ${segment.endCol + 1}`;
+    bar.style.gridRow = `${idx + 1}`;
+    bar.style.background = segment.color;
+    bar.textContent = segment.title;
+    bar.onclick = event => {
+      event.stopPropagation();
+      if (segment.item.kind === "meeting") openMeetingDetail(segment.item);
+      else openScheduleDetail(segment.item);
+    };
+    bars.appendChild(bar);
   }
-  const day = parseLocalDate(iso).getDay();
-  const weekStart = day === 1;
-  const weekEnd = day === 0;
-  const isStart = iso === item.start_date || weekStart;
-  const isEnd = iso === item.end_date || weekEnd;
-  let className = "mid";
-  if (isStart && isEnd) className = "single";
-  else if (isStart) className = "start";
-  else if (isEnd) className = "end";
-  return { className, showTitle: isStart };
+  row.appendChild(bars);
+  return row;
+}
+
+function weekSegments(week) {
+  const dates = week.filter(Boolean);
+  if (!dates.length) return [];
+  const weekStart = dates[0];
+  const weekEnd = dates[dates.length - 1];
+  const segments = [];
+
+  for (const item of state.schedules.map(s => ({ ...s, kind: "schedule" }))) {
+    if (item.end_date < weekStart || item.start_date > weekEnd) continue;
+    const startIso = item.start_date > weekStart ? item.start_date : weekStart;
+    const endIso = item.end_date < weekEnd ? item.end_date : weekEnd;
+    const startCol = week.indexOf(startIso) + 1;
+    const endCol = week.indexOf(endIso) + 1;
+    if (!startCol || !endCol) continue;
+    segments.push({
+      item,
+      startCol,
+      endCol,
+      title: item.title,
+      color: item.color || "#3B82F6",
+      className: segmentClass(item, startIso, endIso),
+    });
+  }
+
+  for (const item of state.meetings.map(m => ({
+    ...m,
+    kind: "meeting",
+    start_date: m.meeting_date,
+    end_date: m.meeting_date,
+    title: `미팅 · ${m.company_name || "-"}`,
+    color: "#14B8A6",
+  }))) {
+    if (!item.start_date || item.start_date < weekStart || item.start_date > weekEnd) continue;
+    const col = week.indexOf(item.start_date) + 1;
+    if (!col) continue;
+    segments.push({
+      item,
+      startCol: col,
+      endCol: col,
+      title: item.title,
+      color: item.color,
+      className: "single",
+    });
+  }
+
+  return segments.sort((a, b) => {
+    if (a.startCol !== b.startCol) return a.startCol - b.startCol;
+    return (b.endCol - b.startCol) - (a.endCol - a.startCol);
+  });
+}
+
+function segmentClass(item, startIso, endIso) {
+  const startsHere = startIso === item.start_date;
+  const endsHere = endIso === item.end_date;
+  if (startsHere && endsHere) return "single";
+  if (startsHere) return "start";
+  if (endsHere) return "end";
+  return "mid";
 }
 
 function itemsForDay(iso) {
@@ -441,7 +512,7 @@ $("deleteSchedule").onclick = deleteSchedule;
 for (const btn of document.querySelectorAll(".back")) btn.onclick = () => show(btn.dataset.target);
 
 if ("serviceWorker" in navigator) {
-  navigator.serviceWorker.register(`${BASE}/static/sw.js?v=20260624-tt2`).then(reg => reg.update()).catch(() => {});
+  navigator.serviceWorker.register(`${BASE}/static/sw.js?v=20260624-tt3`).then(reg => reg.update()).catch(() => {});
 }
 
 consumeUrlAuth();
