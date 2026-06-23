@@ -1784,6 +1784,22 @@ def _schedule_on_day(schedule: Schedule, day: date) -> bool:
     return schedule.start_dt.date() <= day <= schedule.end_dt.date()
 
 
+def _mobile_day_cell(day: date, selected_day: date, schedule_count: int, meeting_count: int) -> str:
+    selected_css = "background:#2563EB;color:#FFFFFF;border-color:#2563EB;" if day == selected_day else ""
+    today_css = "box-shadow: inset 0 0 0 2px #F59E0B;" if day == date.today() else ""
+    badges = ""
+    if schedule_count:
+        badges += f"<span class='mobile-cal-badge schedule'>{schedule_count}</span>"
+    if meeting_count:
+        badges += f"<span class='mobile-cal-badge meeting'>{meeting_count}</span>"
+    return (
+        f"<div class='mobile-cal-day' style='{selected_css}{today_css}'>"
+        f"<div class='mobile-cal-num'>{day.day}</div>"
+        f"<div class='mobile-cal-badges'>{badges}</div>"
+        f"</div>"
+    )
+
+
 def _load_calendar_window(db, year: int, month: int, company_id: int | None = None):
     month_start, month_end = _month_bounds(year, month)
     schedules_q = db.query(Schedule).options(joinedload(Schedule.company)).filter(
@@ -1811,16 +1827,58 @@ def _render_mobile_calendar_stack(db, companies_all):
 <style>
 @media (max-width: 640px) {
   .main .block-container { padding-left: 0.7rem; padding-right: 0.7rem; }
-  div[data-testid="stButton"] > button {
-    min-height: 2.45rem;
-    padding: 0.35rem 0.25rem;
-    font-size: 0.78rem;
-    line-height: 1.15;
-    border-radius: 8px;
-    white-space: pre-line;
-  }
+  div[data-testid="stButton"] > button { min-height: 2.5rem; border-radius: 8px; }
   div[data-testid="stHorizontalBlock"] { gap: 0.25rem; }
 }
+.mobile-cal-grid {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 4px;
+  margin-top: 8px;
+}
+.mobile-cal-weekday {
+  text-align: center;
+  color: #6B7280;
+  font-size: 0.78rem;
+  font-weight: 700;
+  padding: 4px 0;
+}
+.mobile-cal-empty {
+  min-height: 48px;
+}
+.mobile-cal-day {
+  min-height: 54px;
+  border: 1px solid #E5E7EB;
+  border-radius: 8px;
+  background: #FFFFFF;
+  padding: 5px 4px;
+  text-align: center;
+}
+.mobile-cal-num {
+  font-size: 0.95rem;
+  font-weight: 800;
+  line-height: 1.1;
+}
+.mobile-cal-badges {
+  display: flex;
+  justify-content: center;
+  gap: 2px;
+  margin-top: 5px;
+  min-height: 16px;
+}
+.mobile-cal-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 16px;
+  height: 16px;
+  border-radius: 999px;
+  color: #FFFFFF;
+  font-size: 0.65rem;
+  font-weight: 800;
+}
+.mobile-cal-badge.schedule { background: #2563EB; }
+.mobile-cal-badge.meeting { background: #14B8A6; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -1885,34 +1943,43 @@ def _render_mobile_calendar_stack(db, companies_all):
         if meeting.meeting_date:
             meeting_count_by_day[meeting.meeting_date] = meeting_count_by_day.get(meeting.meeting_date, 0) + 1
 
-    st.caption(f"일정 {len(schedules)}건 · 미팅기록 {len(meetings)}건")
-    weekday_cols = st.columns(7)
-    for col, label in zip(weekday_cols, ["월", "화", "수", "목", "금", "토", "일"]):
-        col.markdown(f"<div style='text-align:center;color:#6B7280;font-size:0.8rem;font-weight:700'>{label}</div>", unsafe_allow_html=True)
-
     selected_day = date.fromisoformat(st.session_state["mobile_cal_day"])
+    st.caption(f"일정 {len(schedules)}건 · 미팅기록 {len(meetings)}건")
+
+    cells = [f"<div class='mobile-cal-weekday'>{label}</div>" for label in ["월", "화", "수", "목", "금", "토", "일"]]
     for week in monthcalendar(year, month):
-        cols = st.columns(7)
-        for col, day_num in zip(cols, week):
+        for day_num in week:
             if day_num == 0:
-                col.markdown("<div style='height:42px'></div>", unsafe_allow_html=True)
+                cells.append("<div class='mobile-cal-empty'></div>")
                 continue
             day = date(year, month, day_num)
-            sched_count = schedule_count_by_day.get(day, 0)
-            meet_count = meeting_count_by_day.get(day, 0)
-            marker = ""
-            if sched_count:
-                marker += f" 일정{sched_count}"
-            if meet_count:
-                marker += f" 미팅{meet_count}"
-            label = f"{day_num}\n{marker}" if marker else f"{day_num}"
-            button_type = "primary" if day == selected_day else "secondary"
-            if col.button(label, key=f"mobile_day_{day.isoformat()}", use_container_width=True, type=button_type):
-                st.session_state["mobile_cal_day"] = day.isoformat()
-                st.session_state.pop("mobile_detail_id", None)
-                st.session_state.pop("mobile_detail_kind", None)
-                st.session_state.pop("mobile_add_mode", None)
-                st.rerun()
+            cells.append(_mobile_day_cell(day, selected_day, schedule_count_by_day.get(day, 0), meeting_count_by_day.get(day, 0)))
+    st.markdown("<div class='mobile-cal-grid'>" + "".join(cells) + "</div>", unsafe_allow_html=True)
+
+    day_options = [date(year, month, day_num) for week in monthcalendar(year, month) for day_num in week if day_num]
+    option_labels = []
+    for day in day_options:
+        marker = []
+        if schedule_count_by_day.get(day):
+            marker.append(f"일정 {schedule_count_by_day[day]}")
+        if meeting_count_by_day.get(day):
+            marker.append(f"미팅 {meeting_count_by_day[day]}")
+        suffix = f" ({', '.join(marker)})" if marker else ""
+        option_labels.append(f"{day.day}일{suffix}")
+    current_idx = next((idx for idx, day in enumerate(day_options) if day == selected_day), 0)
+    picked_day = st.selectbox(
+        "날짜 선택",
+        day_options,
+        index=current_idx,
+        format_func=lambda d: option_labels[day_options.index(d)],
+        key="mobile_day_picker",
+    )
+    if picked_day != selected_day:
+        st.session_state["mobile_cal_day"] = picked_day.isoformat()
+        st.session_state.pop("mobile_detail_id", None)
+        st.session_state.pop("mobile_detail_kind", None)
+        st.session_state.pop("mobile_add_mode", None)
+        st.rerun()
 
     st.divider()
     detail_id = st.session_state.get("mobile_detail_id")
