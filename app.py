@@ -800,8 +800,10 @@ def page_meeting_results():
         with st.expander("⚠️ 이 미팅 삭제"):
             st.warning(f"**{fmt_date(sel_meeting.meeting_date)} | {sel_meeting.company.name}** 미팅을 삭제하면 분석결과·약속·액션아이템이 모두 삭제됩니다.")
             if st.button("🗑️ 미팅 삭제 확인", type="primary"):
-                db.delete(sel_meeting)
-                db.commit()
+                meeting_to_del = db.get(MeetingRecord, sel_meeting.id)
+                if meeting_to_del:
+                    db.delete(meeting_to_del)
+                    db.commit()
                 st.session_state.pop("last_meeting_id", None)
                 st.success("삭제되었습니다.")
                 st.rerun()
