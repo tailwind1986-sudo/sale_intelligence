@@ -8,6 +8,7 @@ from __future__ import annotations
 import os
 import hashlib
 import hmac
+from calendar import monthrange
 from datetime import date, datetime, timedelta
 from pathlib import Path
 
@@ -98,10 +99,15 @@ def require_login() -> None:
     st.stop()
 
 
+@st.cache_resource
+def initialize_database() -> None:
+    create_database()
+
+
 require_login()
 
 try:
-    create_database()
+    initialize_database()
 except Exception as _db_err:
     st.error(f"DB 연결 오류: {_db_err}")
     st.stop()
@@ -209,13 +215,8 @@ st.markdown("""
 
 # ─── 헬퍼 ────────────────────────────────────────────────────────────────────
 
-@st.cache_resource
-def _get_cached_session():
-    """앱 전체에서 하나의 DB 세션을 재사용 (연결 오버헤드 제거)."""
-    return SessionLocal()
-
 def get_db():
-    return _get_cached_session()
+    return SessionLocal()
 
 
 def risk_badge(level: str) -> str:
@@ -1700,12 +1701,15 @@ def page_calendar():
 
         companies_all = db.query(Company).order_by(Company.name).all()
 
-        tab_cal, tab_list, tab_settings = st.tabs(
-            ["📅 캘린더", "📋 일정 목록", "⚙️ 텔레그램 설정"]
+        calendar_view = st.radio(
+            "보기",
+            ["📅 캘린더", "📋 일정 목록", "⚙️ 텔레그램 설정"],
+            horizontal=True,
+            label_visibility="collapsed",
         )
 
         # ── 캘린더 뷰 ──
-        with tab_cal:
+        if calendar_view == "📅 캘린더":
             # ── 년/월 드롭다운 네비게이터 ──
             now = datetime.now()
             nav_col1, nav_col2, nav_col3 = st.columns([1, 1, 4])
@@ -1715,9 +1719,16 @@ def page_calendar():
                                            index=now.month - 1, key="cal_nav_month", label_visibility="collapsed",
                                            format_func=lambda m: f"{m}월")
             initial_date = f"{nav_year}-{nav_month:02d}-01"
+            month_start = datetime(nav_year, nav_month, 1)
+            month_end = datetime(nav_year, nav_month, monthrange(nav_year, nav_month)[1], 23, 59, 59)
+            window_start = month_start - timedelta(days=7)
+            window_end = month_end + timedelta(days=7)
 
             schedules = db.query(Schedule).options(
                 joinedload(Schedule.company)
+            ).filter(
+                Schedule.start_dt <= window_end,
+                Schedule.end_dt >= window_start,
             ).all()
 
             events = []
@@ -1926,7 +1937,7 @@ def page_calendar():
                 st.caption("💡 캘린더에서 날짜를 클릭하면 해당 날의 일정을 확인할 수 있습니다.")
 
         # ── 일정 목록 ──
-        with tab_list:
+        if calendar_view == "📋 일정 목록":
             col_f1, col_f2 = st.columns(2)
             filter_upcoming = col_f1.checkbox("앞으로의 일정만", value=True)
             filter_company  = col_f2.selectbox("고객사 필터", [None] + companies_all,
@@ -1937,7 +1948,7 @@ def page_calendar():
                 q = q.filter(Schedule.start_dt >= datetime.now())
             if filter_company:
                 q = q.filter(Schedule.company_id == filter_company.id)
-            schedules_all = q.order_by(Schedule.start_dt).all()
+            schedules_all = q.order_by(Schedule.start_dt).limit(200).all()
 
             if not schedules_all:
                 st.info("일정이 없습니다.")
@@ -1965,7 +1976,7 @@ def page_calendar():
                                 st.rerun()
 
         # ── 텔레그램 설정 ──
-        with tab_settings:
+        if calendar_view == "⚙️ 텔레그램 설정":
             st.subheader("⚙️ 텔레그램 알림 설정")
 
             token = _get_token()
