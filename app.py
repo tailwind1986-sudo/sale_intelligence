@@ -188,10 +188,12 @@ body,
     [data-testid="stHorizontalBlock"] {
         max-width: 100% !important;
         gap: 0.4rem !important;
+        flex-wrap: wrap !important;
     }
 
     [data-testid="stHorizontalBlock"] > div {
-        min-width: 0 !important;
+        min-width: min(100%, 15rem) !important;
+        flex: 1 1 100% !important;
     }
 
     input,
@@ -199,6 +201,50 @@ body,
     select,
     button {
         font-size: 16px !important;
+    }
+}
+
+.summary-metric-grid {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 0.55rem;
+    margin: 0.4rem 0 0.9rem;
+}
+.summary-metric {
+    border: 1px solid #E2E8F0;
+    border-radius: 10px;
+    background: #FFFFFF;
+    padding: 0.75rem 0.85rem;
+}
+.summary-metric strong {
+    display: block;
+    color: #0F172A;
+    font-size: 1.25rem;
+    line-height: 1.15;
+}
+.summary-metric span {
+    display: block;
+    margin-bottom: 0.25rem;
+    color: #64748B;
+    font-size: 0.78rem;
+    font-weight: 700;
+}
+
+@media (max-width: 640px) {
+    .summary-metric-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 0.45rem;
+    }
+    .summary-metric {
+        padding: 0.65rem 0.55rem;
+    }
+    .summary-metric strong {
+        font-size: 1.1rem;
+        text-align: center;
+    }
+    .summary-metric span {
+        text-align: center;
+        word-break: keep-all;
     }
 }
 
@@ -1011,18 +1057,23 @@ def page_meeting_results():
         company = sel_meeting.company
 
         # 헤더
-        hcol1, hcol2, hcol3, hcol4 = st.columns(4)
-        hcol1.metric("신뢰도", f"{a.trust_score}/100")
-        hcol2.metric("위험도", f"{a.risk_score}/100")
-        hcol3.metric("약속", f"{len(sel_meeting.promises)}건")
-        hcol4.metric("액션", f"{len(sel_meeting.action_items)}건")
+        st.markdown(
+            f"""
+            <div class="summary-metric-grid">
+                <div class="summary-metric"><span>신뢰도</span><strong>{a.trust_score}/100</strong></div>
+                <div class="summary-metric"><span>위험도</span><strong>{a.risk_score}/100</strong></div>
+                <div class="summary-metric"><span>약속</span><strong>{len(sel_meeting.promises)}건</strong></div>
+                <div class="summary-metric"><span>액션</span><strong>{len(sel_meeting.action_items)}건</strong></div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
 
         # 점수 바
-        col_t, col_r = st.columns(2)
-        with col_t:
+        if True:
             trust_color = "#10B981" if a.trust_score >= 70 else ("#F59E0B" if a.trust_score >= 40 else "#EF4444")
             st.markdown(f"**신뢰도 점수**{score_bar(a.trust_score, trust_color)}", unsafe_allow_html=True)
-        with col_r:
+        if True:
             risk_color = "#EF4444" if a.risk_score >= 70 else ("#F59E0B" if a.risk_score >= 40 else "#10B981")
             st.markdown(f"**위험도 점수**{score_bar(a.risk_score, risk_color)}", unsafe_allow_html=True)
 
@@ -2704,6 +2755,7 @@ with st.sidebar:
         else:
             if st.button(item, key=f"menu_{item}", use_container_width=True):
                 st.session_state["selected_menu"] = item
+                st.session_state["collapse_sidebar_after_nav"] = True
                 st.rerun()
     st.markdown("</div>", unsafe_allow_html=True)
 
@@ -2721,5 +2773,31 @@ with st.sidebar:
         st.session_state["authenticated"] = False
         st.session_state.pop("auth_user", None)
         st.rerun()
+
+if st.session_state.pop("collapse_sidebar_after_nav", False):
+    components.html(
+        """
+        <script>
+        setTimeout(() => {
+          const doc = window.parent.document;
+          const selectors = [
+            '[data-testid="stSidebarCollapseButton"] button',
+            'button[aria-label="Close sidebar"]',
+            'button[title="Close sidebar"]',
+            '[data-testid="baseButton-headerNoPadding"]'
+          ];
+          for (const selector of selectors) {
+            const button = doc.querySelector(selector);
+            if (button) {
+              button.click();
+              break;
+            }
+          }
+        }, 80);
+        </script>
+        """,
+        height=0,
+        width=0,
+    )
 
 PAGES[selected]()
