@@ -541,7 +541,7 @@ $("deleteSchedule").onclick = deleteSchedule;
 for (const btn of document.querySelectorAll(".back")) btn.onclick = () => show(btn.dataset.target);
 
 if ("serviceWorker" in navigator) {
-  navigator.serviceWorker.register(`${BASE}/sw.js?v=20260624-tt6`, { scope: `${BASE}/` }).then(reg => reg.update()).catch(() => {});
+  navigator.serviceWorker.register(`${BASE}/sw.js?v=20260624-tt7`, { scope: `${BASE}/` }).then(reg => reg.update()).catch(() => {});
 }
 
 consumeUrlAuth();
