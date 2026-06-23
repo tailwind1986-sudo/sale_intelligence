@@ -6,6 +6,8 @@ Sales Intelligence System
 from __future__ import annotations
 
 import os
+import hashlib
+import hmac
 from datetime import date, datetime, timedelta
 from pathlib import Path
 
@@ -38,6 +40,65 @@ st.set_page_config(
     layout="wide",
     initial_sidebar_state="expanded",
 )
+
+
+def _get_secret(name: str, default: str = "") -> str:
+    try:
+        value = st.secrets.get(name, "")
+        if value:
+            return str(value)
+    except Exception:
+        pass
+    return os.getenv(name, default)
+
+
+def _hash_password(password: str) -> str:
+    return hashlib.sha256(password.encode("utf-8")).hexdigest()
+
+
+def _password_matches(password: str) -> bool:
+    password_hash = _get_secret("APP_PASSWORD_HASH")
+    if password_hash:
+        return hmac.compare_digest(_hash_password(password), password_hash.strip().lower())
+
+    plain_password = _get_secret("APP_PASSWORD")
+    if plain_password:
+        return hmac.compare_digest(password, plain_password)
+
+    return False
+
+
+def require_login() -> None:
+    if st.session_state.get("authenticated"):
+        return
+
+    configured = bool(_get_secret("APP_PASSWORD_HASH") or _get_secret("APP_PASSWORD"))
+    st.title("Sales Intelligence")
+
+    if not configured:
+        st.error("로그인 비밀번호가 설정되지 않았습니다.")
+        st.info("운영 환경에서는 APP_PASSWORD_HASH, 로컬에서는 APP_PASSWORD 또는 APP_PASSWORD_HASH를 설정해주세요.")
+        st.stop()
+
+    with st.form("login_form"):
+        username = st.text_input("아이디", value=_get_secret("APP_USERNAME", "admin"))
+        password = st.text_input("비밀번호", type="password")
+        submitted = st.form_submit_button("로그인", type="primary")
+
+    if submitted:
+        expected_username = _get_secret("APP_USERNAME", "admin")
+        username_ok = hmac.compare_digest(username.strip(), expected_username)
+        if username_ok and _password_matches(password):
+            st.session_state["authenticated"] = True
+            st.session_state["auth_user"] = expected_username
+            st.rerun()
+        else:
+            st.error("아이디 또는 비밀번호가 올바르지 않습니다.")
+
+    st.stop()
+
+
+require_login()
 
 try:
     create_database()
@@ -2007,5 +2068,12 @@ with st.sidebar:
         <span style="color:#334155;font-size:0.7rem;">Powered by Claude AI</span>
     </div>
     """, unsafe_allow_html=True)
+
+    st.divider()
+    st.caption(f"로그인: {st.session_state.get('auth_user', 'admin')}")
+    if st.button("로그아웃", use_container_width=True):
+        st.session_state["authenticated"] = False
+        st.session_state.pop("auth_user", None)
+        st.rerun()
 
 PAGES[selected]()

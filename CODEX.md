@@ -191,6 +191,13 @@ DATABASE_URL = "postgresql://postgres.zdwbsxipthnkluqfooxh:PASSWORD@aws-1-ap-nor
 OPENAI_API_KEY = "sk-proj-..."
 TELEGRAM_BOT_TOKEN = "8732241207:..."
 TELEGRAM_CHAT_ID = "7274204338"
+APP_USERNAME = "admin"
+APP_PASSWORD_HASH = "sha256-password-hash"
+```
+
+비밀번호 해시는 로컬 PowerShell에서 아래 방식으로 생성:
+```powershell
+python -c "import hashlib,getpass; print(hashlib.sha256(getpass.getpass('Password: ').encode()).hexdigest())"
 ```
 
 ### 4-5. 앱 실행
@@ -201,6 +208,24 @@ nohup streamlit run app.py --server.port 8501 > ~/streamlit.log 2>&1 &
 ```
 
 ### 4-6. 재부팅 자동시작 설정
+권장 방식은 `deploy/oracle/sales-intelligence.service` systemd 서비스 사용.
+```bash
+cd ~/app
+sudo cp deploy/oracle/sales-intelligence.service /etc/systemd/system/sales-intelligence.service
+sudo systemctl daemon-reload
+sudo systemctl enable sales-intelligence
+sudo systemctl restart sales-intelligence
+sudo systemctl status sales-intelligence --no-pager
+```
+
+재부팅 검증:
+```bash
+sudo reboot
+# 재접속 후
+cd ~/app && bash deploy/oracle/healthcheck.sh
+```
+
+기존 crontab 방식:
 ```bash
 # 시작 스크립트 생성
 cat > ~/.streamlit_start.sh << 'EOF'
@@ -230,6 +255,14 @@ sudo iptables -I INPUT -p tcp --dport 8501 -j ACCEPT
 ```
 
 ### 4-8. 앱 업데이트 방법
+권장 방식:
+```bash
+cd ~/app
+chmod +x deploy/oracle/*.sh
+bash deploy/oracle/update_app.sh
+```
+
+수동 방식:
 ```bash
 ssh -i "D:\Project\Server Setup_oracle\ssh-key-2026-06-23.key" ubuntu@161.33.148.67
 cd ~/app && git pull
@@ -248,6 +281,18 @@ nohup streamlit run app.py --server.port 8501 > ~/streamlit.log 2>&1 &
 | `OPENAI_API_KEY` | OpenAI API 키 | 동일 |
 | `TELEGRAM_BOT_TOKEN` | 텔레그램 봇 토큰 | 동일 |
 | `TELEGRAM_CHAT_ID` | 텔레그램 Chat ID | 동일 |
+| `APP_USERNAME` | 앱 로그인 아이디 | 동일 |
+| `APP_PASSWORD_HASH` | 앱 로그인 비밀번호 SHA-256 해시 | 동일 |
+| `APP_PASSWORD` | 로컬 개발용 평문 비밀번호 fallback | `.env` 로컬 전용 |
+
+---
+
+## 5-1. 보안 메모
+
+- 앱 진입 시 `APP_USERNAME` + `APP_PASSWORD_HASH` 기반 로그인 필요
+- 운영 서버/Streamlit Cloud에는 `APP_PASSWORD_HASH`만 사용 권장
+- `.env`, `.streamlit/secrets.toml`, DB 파일은 `.gitignore`로 제외
+- Oracle 서버는 가능하면 8501 직접 공개 대신 Nginx + HTTPS + 방화벽 제한으로 전환 예정
 
 ---
 
