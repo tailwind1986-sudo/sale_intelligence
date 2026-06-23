@@ -1,10 +1,5 @@
 http://:8501 {
-    encode gzip
-    redir /mobile /mobile/
-    handle_path /mobile* {
-        reverse_proxy 127.0.0.1:8600
-    }
-    reverse_proxy 127.0.0.1:8502
+    redir https://161.33.148.67.sslip.io{uri} permanent
 }
 
 161.33.148.67.sslip.io {
