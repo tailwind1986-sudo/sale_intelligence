@@ -3,10 +3,14 @@ from __future__ import annotations
 import hashlib
 import hmac
 import os
-import tomllib
 from calendar import monthrange
 from datetime import date, datetime, time, timedelta
 from pathlib import Path
+
+try:
+    import tomllib
+except ModuleNotFoundError:  # Python 3.10 server runtime
+    import tomli as tomllib
 
 from fastapi import Depends, FastAPI, Header, HTTPException
 from fastapi.responses import FileResponse

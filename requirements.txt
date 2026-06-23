@@ -9,3 +9,4 @@ streamlit-calendar>=0.6.0
 requests>=2.28.0
 fastapi>=0.115.0
 uvicorn[standard]>=0.30.0
+tomli>=2.0.1; python_version < "3.11"
