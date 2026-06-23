@@ -5,6 +5,21 @@
 
 ---
 
+## 0. Claude 수정 이력 (CODEX 이후)
+
+> CODEX 작업 이후 Claude가 직접 수정한 내용을 기록합니다.
+
+| 날짜 | 파일 | 내용 |
+|------|------|------|
+| 2026-06-24 | `mobile_calendar/styles.css` | 모바일 캘린더 날짜 숫자와 이벤트 바 겹침 수정 — `week-bars`를 `absolute`에서 별도 행(normal flow)으로 변경 |
+| 2026-06-24 | `mobile_calendar/styles.css` | 일정 추가 폼 날짜/시간 비율 조정 — `grid-template-columns: 52px 3fr 2fr` (날짜 넓게, 시간 적절히) |
+| 2026-06-24 | `services/telegram_service.py` | `send_daily_digest()` 함수 추가 — 오늘 일정 있을 때만 아침 요약 메시지 전송 |
+| 2026-06-24 | `reminder_worker.py` | `digest` 인자 지원 추가 — `python reminder_worker.py digest` 로 아침 요약 실행 |
+| 2026-06-24 | `deploy/oracle/sales-digest.service` | 아침 digest systemd 서비스 파일 추가 |
+| 2026-06-24 | `deploy/oracle/sales-digest.timer` | 매일 08:00 KST (23:00 UTC) 실행 systemd timer 추가 |
+
+---
+
 ## 1. 프로젝트 개요
 
 | 항목 | 내용 |

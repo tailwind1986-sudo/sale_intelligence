@@ -1,0 +1,11 @@
+[Unit]
+Description=Run Sales Intelligence daily digest at 08:00 KST (23:00 UTC)
+
+[Timer]
+OnCalendar=*-*-* 23:00:00 UTC
+AccuracySec=60s
+Persistent=true
+Unit=sales-digest.service
+
+[Install]
+WantedBy=timers.target

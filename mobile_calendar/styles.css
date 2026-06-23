@@ -479,7 +479,7 @@ textarea {
 }
 
 .form-row {
-  grid-template-columns: 70px 1fr 104px;
+  grid-template-columns: 52px 3fr 2fr;
 }
 
 .form-row input,
@@ -554,5 +554,5 @@ textarea {
   .week-bars { grid-auto-rows: 14px; min-height: 32px; }
   .week-event-bar { min-height: 14px; line-height: 14px; font-size: 0.60rem; padding: 0 3px; }
   .item { grid-template-columns: 62px 4px 1fr auto; }
-  .form-row { grid-template-columns: 58px 1fr 92px; }
+  .form-row { grid-template-columns: 46px 3fr 2fr; }
 }

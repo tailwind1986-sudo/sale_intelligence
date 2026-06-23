@@ -80,6 +80,41 @@ def send_message(text: str, chat_id: str | None = None) -> bool:
         return False
 
 
+def send_daily_digest(db) -> bool:
+    """오늘 일정이 있을 때만 아침 요약 메시지 전송. 전송 성공 시 True."""
+    from database.models import Schedule
+
+    token = _get_token()
+    chat_id = _get_chat_id()
+    if not token or not chat_id:
+        return False
+
+    now = _local_now_naive()
+    day_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    day_end   = now.replace(hour=23, minute=59, second=59, microsecond=0)
+
+    schedules = (
+        db.query(Schedule)
+        .filter(Schedule.start_dt <= day_end, Schedule.end_dt >= day_start)
+        .order_by(Schedule.all_day.desc(), Schedule.start_dt)
+        .all()
+    )
+
+    if not schedules:
+        return False
+
+    lines = [f"☀️ <b>{now.month}월 {now.day}일 오늘의 일정 ({len(schedules)}건)</b>\n"]
+    for s in schedules:
+        if s.all_day:
+            time_str = "종일"
+        else:
+            time_str = f"{s.start_dt.strftime('%H:%M')} ~ {s.end_dt.strftime('%H:%M')}"
+        company_str = f" [{s.company.name}]" if s.company else ""
+        lines.append(f"• {time_str}{company_str} {s.title}")
+
+    return send_message("\n".join(lines), chat_id)
+
+
 def check_and_send_reminders(db) -> int:
     """Send due Telegram reminders and mark them as sent."""
     from database.models import Schedule
