@@ -196,9 +196,9 @@ textarea {
 .day-cell {
   position: relative;
   display: block;
-  height: clamp(68px, calc((100dvh - 320px) / 6), 96px);
+  height: clamp(72px, calc((100dvh - 320px) / 6), 100px);
   min-height: 0;
-  padding: 6px 2px 3px;
+  padding: 5px 2px 3px;
   appearance: none;
   -webkit-appearance: none;
   background: #fff;
@@ -228,16 +228,18 @@ textarea {
   display: block;
   font-size: 0.83rem;
   font-weight: 900;
-  line-height: 20px;
+  line-height: 22px;
   height: 22px;
-  margin-bottom: 2px;
+  margin-bottom: 0;
+  position: relative;
+  z-index: 3;
 }
 
 .week-bars {
   position: absolute;
   left: 0;
   right: 0;
-  top: 30px;
+  top: 34px;
   z-index: 2;
   grid-auto-rows: 16px;
   row-gap: 2px;
@@ -552,7 +554,7 @@ textarea {
     height: clamp(64px, calc((100dvh - 310px) / 6), 88px);
     padding-top: 5px;
   }
-  .week-bars { top: 28px; grid-auto-rows: 15px; }
+  .week-bars { top: 32px; grid-auto-rows: 15px; }
   .week-event-bar { min-height: 15px; line-height: 15px; font-size: 0.62rem; padding: 0 3px; }
   .item { grid-template-columns: 62px 4px 1fr auto; }
   .form-row { grid-template-columns: 58px 1fr 92px; }
