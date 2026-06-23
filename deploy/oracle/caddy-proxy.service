@@ -1,0 +1,16 @@
+[Unit]
+Description=Caddy HTTPS reverse proxy for Sales Intelligence
+After=network-online.target sales-intelligence.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/snap/bin/caddy run --config /var/snap/caddy/common/Caddyfile --adapter caddyfile
+ExecReload=/snap/bin/caddy reload --config /var/snap/caddy/common/Caddyfile --adapter caddyfile --force
+TimeoutStopSec=5s
+LimitNOFILE=1048576
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

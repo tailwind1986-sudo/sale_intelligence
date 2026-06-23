@@ -249,10 +249,36 @@ crontab -l
   - Source CIDR: `0.0.0.0/0`
   - Protocol: TCP
   - Destination Port: `8501`
+- HTTPS 프록시 사용 시 추가 Ingress Rule 필요:
+  - Destination Port: `80`
+  - Destination Port: `443`
 - 서버 내부 iptables:
 ```bash
 sudo iptables -I INPUT -p tcp --dport 8501 -j ACCEPT
+sudo iptables -I INPUT -p tcp --dport 80 -j ACCEPT
+sudo iptables -I INPUT -p tcp --dport 443 -j ACCEPT
 ```
+
+### 4-7-1. HTTPS 접속
+IP 직접 접속(`http://161.33.148.67:8501`)은 브라우저에서 항상 "보안 안됨"으로 표시된다.
+HTTPS 접속은 Caddy + `sslip.io` 도메인 사용:
+
+```bash
+sudo snap install caddy
+sudo mkdir -p /var/snap/caddy/common
+sudo cp ~/app/deploy/oracle/Caddyfile /var/snap/caddy/common/Caddyfile
+sudo cp ~/app/deploy/oracle/caddy-proxy.service /etc/systemd/system/caddy-proxy.service
+sudo systemctl daemon-reload
+sudo systemctl enable caddy-proxy
+sudo systemctl restart caddy-proxy
+```
+
+접속 URL:
+```text
+https://161.33.148.67.sslip.io
+```
+
+주의: Oracle Cloud Security List에서 80/443 포트가 열려 있어야 인증서 발급 및 외부 HTTPS 접속이 가능하다.
 
 ### 4-8. 앱 업데이트 방법
 권장 방식:

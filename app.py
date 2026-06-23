@@ -11,6 +11,7 @@ import hmac
 from calendar import monthrange
 from datetime import date, datetime, timedelta
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 import pandas as pd
 import streamlit as st
@@ -1597,6 +1598,38 @@ EVENT_COLORS = {
     "보라": "#7C3AED",
     "회색": "#64748B",
 }
+LOCAL_TZ = ZoneInfo("Asia/Seoul")
+
+
+def _calendar_date_str(value) -> str:
+    """FullCalendar가 넘기는 UTC ISO 문자열을 한국 날짜로 안전하게 변환한다."""
+    if not value:
+        return date.today().isoformat()
+    if isinstance(value, date) and not isinstance(value, datetime):
+        return value.isoformat()
+    if isinstance(value, datetime):
+        return value.astimezone(LOCAL_TZ).date().isoformat() if value.tzinfo else value.date().isoformat()
+
+    text = str(value)
+    if "T" not in text:
+        return text[:10]
+
+    iso_text = text.replace("Z", "+00:00")
+    try:
+        dt = datetime.fromisoformat(iso_text)
+        if dt.tzinfo:
+            return dt.astimezone(LOCAL_TZ).date().isoformat()
+        return dt.date().isoformat()
+    except ValueError:
+        return text[:10]
+
+
+def _calendar_payload_date(payload: dict, *keys: str) -> str:
+    for key in keys:
+        value = payload.get(key)
+        if value:
+            return _calendar_date_str(value)
+    return date.today().isoformat()
 
 
 def _save_schedule(db, title, description, start_dt, end_dt, all_day,
@@ -1669,6 +1702,9 @@ def _schedule_form(db, companies_all, form_key, default_date=None,
                 return False
             start_dt = datetime.combine(start_date, start_time if not all_day else datetime.min.time())
             end_dt   = datetime.combine(end_date,   end_time   if not all_day else datetime.min.time())
+            if end_dt < start_dt:
+                st.error("종료 일시는 시작 일시보다 빠를 수 없습니다.")
+                return False
             _save_schedule(db, title, description or None, start_dt, end_dt, all_day,
                            EVENT_COLORS[color_label],
                            linked_company.id if linked_company else None,
@@ -1736,6 +1772,13 @@ def page_calendar():
                 st.session_state.pop("cal_detail_kind", None)
                 st.session_state.pop("cal_add_mode", None)
                 st.rerun()
+
+            quick_add_day = st.session_state.get("cal_day") or date.today().isoformat()
+            with st.expander("일정 빠른 등록", expanded=st.session_state.get("cal_add_mode", False)):
+                if _schedule_form(db, companies_all, "quick_add_form", default_date=quick_add_day):
+                    st.session_state.pop("cal_add_mode", None)
+                    st.toast("일정이 저장되었습니다.", icon="✅")
+                    st.rerun()
 
             initial_date = f"{nav_year}-{nav_month:02d}-01"
             month_start = datetime(nav_year, nav_month, 1)
@@ -1848,7 +1891,7 @@ def page_calendar():
 
             # ── 캘린더 이벤트 처리 ──
             if result and result.get("dateClick"):
-                st.session_state["cal_day"] = result["dateClick"]["date"][:10]
+                st.session_state["cal_day"] = _calendar_payload_date(result["dateClick"], "dateStr", "date")
                 st.session_state.pop("cal_detail_id", None)
                 st.session_state.pop("cal_detail_kind", None)
                 st.session_state.pop("cal_add_mode", None)
@@ -1858,7 +1901,7 @@ def page_calendar():
                 ev_raw_id = result["eventClick"]["event"]["id"]
                 kind, raw_id = ev_raw_id.split("-", 1)
                 # 해당 이벤트의 날짜도 함께 저장 (뒤로가기용)
-                ev_date = result["eventClick"]["event"]["start"][:10]
+                ev_date = _calendar_payload_date(result["eventClick"]["event"], "startStr", "start")
                 st.session_state["cal_day"] = ev_date
                 st.session_state["cal_detail_kind"] = "meeting" if kind == "m" else "schedule"
                 st.session_state["cal_detail_id"] = int(raw_id)
@@ -1866,7 +1909,7 @@ def page_calendar():
                 st.session_state.pop("cal_show_edit_form", None)
 
             if result and result.get("select"):
-                st.session_state["cal_day"] = result["select"]["start"][:10]
+                st.session_state["cal_day"] = _calendar_payload_date(result["select"], "startStr", "start")
                 st.session_state["cal_add_mode"] = True
                 st.session_state.pop("cal_detail_id", None)
                 st.session_state.pop("cal_detail_kind", None)
@@ -2018,13 +2061,8 @@ def page_calendar():
                             st.rerun()
 
                     if cal_add_mode:
-                        st.divider()
-                        st.markdown("#### 일정 추가")
-                        if _schedule_form(db, companies_all, "day_add_form", default_date=day_dt.date().isoformat()):
-                            st.session_state.pop("cal_add_mode", None)
-                            st.toast("일정이 저장되었습니다.", icon="✅")
-                            st.rerun()
-                        if st.button("취소", key="cancel_day_add", use_container_width=True):
+                        st.info("상단의 '일정 빠른 등록' 창에서 저장할 수 있습니다.")
+                        if st.button("등록 취소", key="cancel_day_add", use_container_width=True):
                             st.session_state.pop("cal_add_mode", None)
                             st.rerun()
 

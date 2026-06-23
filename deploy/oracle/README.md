@@ -40,3 +40,27 @@ Optional cron-based auto update every 10 minutes:
 ```
 
 Manual updates are safer than cron if the app is used during business hours.
+
+## 4. HTTPS reverse proxy
+
+The Oracle VM is prepared to serve the app through Caddy:
+
+```bash
+sudo snap install caddy
+sudo iptables -I INPUT -p tcp --dport 80 -j ACCEPT
+sudo iptables -I INPUT -p tcp --dport 443 -j ACCEPT
+sudo mkdir -p /var/snap/caddy/common
+sudo cp deploy/oracle/Caddyfile /var/snap/caddy/common/Caddyfile
+sudo cp deploy/oracle/caddy-proxy.service /etc/systemd/system/caddy-proxy.service
+sudo systemctl daemon-reload
+sudo systemctl enable caddy-proxy
+sudo systemctl restart caddy-proxy
+```
+
+Oracle Cloud console must also allow inbound TCP `80` and `443` in the instance subnet/security list.
+
+HTTPS URL:
+
+```text
+https://161.33.148.67.sslip.io
+```
