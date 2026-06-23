@@ -2,16 +2,63 @@ from __future__ import annotations
 
 import os
 from datetime import datetime, timedelta
+from pathlib import Path
+from zoneinfo import ZoneInfo
 
 import requests
+from dotenv import load_dotenv
+
+try:
+    import tomllib
+except ModuleNotFoundError:  # Python 3.10 server runtime
+    import tomli as tomllib
+
+
+APP_DIR = Path(__file__).resolve().parent.parent
+DEFAULT_TIMEZONE = "Asia/Seoul"
+
+load_dotenv(APP_DIR / ".env")
+load_dotenv()
+
+
+def _read_secret_file(path: Path) -> dict:
+    if not path.exists():
+        return {}
+    try:
+        return tomllib.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+
+
+def _get_secret(name: str, default: str = "") -> str:
+    value = os.getenv(name)
+    if value:
+        return value
+    for path in (
+        APP_DIR / ".streamlit" / "secrets.toml",
+        Path.home() / ".streamlit" / "secrets.toml",
+    ):
+        data = _read_secret_file(path)
+        if data.get(name):
+            return str(data[name])
+    return default
+
+
+def _local_now_naive() -> datetime:
+    timezone_name = _get_secret("APP_TIMEZONE", DEFAULT_TIMEZONE)
+    try:
+        timezone = ZoneInfo(timezone_name)
+    except Exception:
+        timezone = ZoneInfo(DEFAULT_TIMEZONE)
+    return datetime.now(timezone).replace(tzinfo=None)
 
 
 def _get_token() -> str:
-    return os.environ.get("TELEGRAM_BOT_TOKEN", "")
+    return _get_secret("TELEGRAM_BOT_TOKEN")
 
 
 def _get_chat_id() -> str:
-    return os.environ.get("TELEGRAM_CHAT_ID", "")
+    return _get_secret("TELEGRAM_CHAT_ID")
 
 
 def send_message(text: str, chat_id: str | None = None) -> bool:
@@ -25,21 +72,25 @@ def send_message(text: str, chat_id: str | None = None) -> bool:
             json={"chat_id": cid, "text": text, "parse_mode": "HTML"},
             timeout=10,
         )
+        if not r.ok:
+            print(f"Telegram send failed: HTTP {r.status_code} {r.text[:200]}")
         return r.ok
-    except Exception:
+    except Exception as exc:
+        print(f"Telegram send failed: {type(exc).__name__}")
         return False
 
 
 def check_and_send_reminders(db) -> int:
-    """미전송 알림 중 발송 시각이 된 것을 텔레그램으로 보내고 sent 처리. 전송 건수 반환."""
+    """Send due Telegram reminders and mark them as sent."""
     from database.models import Schedule
 
     token = _get_token()
     chat_id = _get_chat_id()
     if not token or not chat_id:
+        print("Telegram reminder skipped: TELEGRAM_BOT_TOKEN or TELEGRAM_CHAT_ID is missing")
         return 0
 
-    now = datetime.now()
+    now = _local_now_naive()
     pending = (
         db.query(Schedule)
         .filter(
@@ -51,17 +102,18 @@ def check_and_send_reminders(db) -> int:
 
     sent = 0
     for s in pending:
-        remind_at = s.start_dt - timedelta(minutes=s.remind_minutes)
+        remind_minutes = s.remind_minutes if s.remind_minutes is not None else 0
+        remind_at = s.start_dt - timedelta(minutes=remind_minutes)
         if now >= remind_at:
             company_str = f" [{s.company.name}]" if s.company else ""
-            time_str = s.start_dt.strftime("%m/%d %H:%M") if not s.all_day else s.start_dt.strftime("%m/%d (종일)")
+            time_str = s.start_dt.strftime("%m/%d 종일") if s.all_day else s.start_dt.strftime("%m/%d %H:%M")
             text = (
-                f"🔔 <b>일정 알림</b>{company_str}\n"
-                f"📅 {time_str}\n"
-                f"📌 {s.title}"
+                f"<b>일정 알림</b>{company_str}\n"
+                f"시간: {time_str}\n"
+                f"제목: {s.title}"
             )
             if s.description:
-                text += f"\n📝 {s.description}"
+                text += f"\n메모: {s.description}"
             if send_message(text, chat_id):
                 s.remind_sent = True
                 sent += 1

@@ -5,9 +5,14 @@
 ```bash
 cd ~/app
 sudo cp deploy/oracle/sales-intelligence.service /etc/systemd/system/sales-intelligence.service
+sudo cp deploy/oracle/sales-mobile.service /etc/systemd/system/sales-mobile.service
+sudo cp deploy/oracle/sales-reminder.service /etc/systemd/system/sales-reminder.service
+sudo cp deploy/oracle/sales-reminder.timer /etc/systemd/system/sales-reminder.timer
 sudo systemctl daemon-reload
-sudo systemctl enable sales-intelligence
+sudo systemctl enable sales-intelligence sales-mobile sales-reminder.timer
 sudo systemctl restart sales-intelligence
+sudo systemctl restart sales-mobile
+sudo systemctl restart sales-reminder.timer
 sudo systemctl status sales-intelligence --no-pager
 ```
 
@@ -32,6 +37,8 @@ cd ~/app
 chmod +x deploy/oracle/*.sh
 bash deploy/oracle/update_app.sh
 ```
+
+The Telegram reminder timer runs every minute and sends due schedule reminders using `TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHAT_ID` from `.env` or `.streamlit/secrets.toml`.
 
 Optional cron-based auto update every 10 minutes:
 

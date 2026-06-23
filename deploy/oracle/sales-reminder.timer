@@ -1,0 +1,11 @@
+[Unit]
+Description=Run Sales Intelligence Telegram reminder checker every minute
+
+[Timer]
+OnBootSec=1min
+OnUnitActiveSec=1min
+AccuracySec=15s
+Unit=sales-reminder.service
+
+[Install]
+WantedBy=timers.target
