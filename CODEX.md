@@ -17,6 +17,10 @@
 | 2026-06-24 | `reminder_worker.py` | `digest` 인자 지원 추가 — `python reminder_worker.py digest` 로 아침 요약 실행 |
 | 2026-06-24 | `deploy/oracle/sales-digest.service` | 아침 digest systemd 서비스 파일 추가 |
 | 2026-06-24 | `deploy/oracle/sales-digest.timer` | 매일 08:00 KST (23:00 UTC) 실행 systemd timer 추가 |
+| 2026-06-24 | `services/telegram_service.py` | `send_weekly_summary()` 추가 — 이번 주 미팅 기록을 GPT-4o로 요약해 텔레그램 전송 |
+| 2026-06-24 | `reminder_worker.py` | `weekly` 인자 추가 — `python reminder_worker.py weekly` 로 주간 요약 실행 |
+| 2026-06-24 | `deploy/oracle/sales-weekly.service` | 주간 요약 systemd 서비스 파일 추가 |
+| 2026-06-24 | `deploy/oracle/sales-weekly.timer` | 매주 금요일 11:00 KST (02:00 UTC) 실행 systemd timer 추가 |
 
 ---
 

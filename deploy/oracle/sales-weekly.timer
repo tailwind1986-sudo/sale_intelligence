@@ -1,0 +1,11 @@
+[Unit]
+Description=Run Sales Intelligence weekly summary every Friday 11:00 KST (02:00 UTC)
+
+[Timer]
+OnCalendar=Fri *-*-* 02:00:00 UTC
+AccuracySec=60s
+Persistent=true
+Unit=sales-weekly.service
+
+[Install]
+WantedBy=timers.target

@@ -115,6 +115,95 @@ def send_daily_digest(db) -> bool:
     return send_message("\n".join(lines), chat_id)
 
 
+def send_weekly_summary(db) -> bool:
+    """이번 주(월~금) 미팅 기록을 GPT-4o로 요약해 텔레그램 전송. 성공 시 True."""
+    from database.models import MeetingRecord, MeetingAnalysis
+    from sqlalchemy.orm import joinedload
+    import json
+
+    token = _get_token()
+    chat_id = _get_chat_id()
+    openai_key = _get_secret("OPENAI_API_KEY")
+    if not token or not chat_id or not openai_key:
+        print("Weekly summary skipped: missing token/chat_id/openai_key")
+        return False
+
+    now = _local_now_naive()
+    # 이번 주 월요일 ~ 오늘(금요일)
+    monday = now - timedelta(days=now.weekday())
+    week_start = monday.replace(hour=0, minute=0, second=0, microsecond=0)
+    week_end   = now.replace(hour=23, minute=59, second=59, microsecond=0)
+
+    meetings = (
+        db.query(MeetingRecord)
+        .options(joinedload(MeetingRecord.company), joinedload(MeetingRecord.analysis))
+        .filter(MeetingRecord.meeting_date >= week_start.date(),
+                MeetingRecord.meeting_date <= week_end.date())
+        .order_by(MeetingRecord.meeting_date)
+        .all()
+    )
+
+    if not meetings:
+        print("Weekly summary skipped: no meetings this week")
+        return False
+
+    # GPT에 넘길 미팅 내용 구성
+    meeting_texts = []
+    for m in meetings:
+        date_str = m.meeting_date.strftime("%m/%d") if m.meeting_date else "날짜미상"
+        company  = m.company.name if m.company else "미상"
+        parts = [f"[{date_str}] {company}"]
+        if m.analysis:
+            if m.analysis.one_line_summary:
+                parts.append(f"요약: {m.analysis.one_line_summary}")
+            if m.analysis.key_discussions:
+                items = m.analysis.key_discussions
+                if isinstance(items, list):
+                    parts.append("핵심논의: " + " / ".join(str(i) for i in items[:3]))
+            if m.analysis.customer_needs:
+                items = m.analysis.customer_needs
+                if isinstance(items, list):
+                    parts.append("고객니즈: " + " / ".join(str(i) for i in items[:2]))
+            if m.analysis.follow_ups:
+                items = m.analysis.follow_ups
+                if isinstance(items, list):
+                    parts.append("후속조치: " + " / ".join(str(i) for i in items[:2]))
+        elif m.raw_text:
+            parts.append(m.raw_text[:300])
+        meeting_texts.append("\n".join(parts))
+
+    week_label = f"{week_start.month}/{week_start.day}~{now.month}/{now.day}"
+    prompt = f"""아래는 이번 주({week_label}) 영업 미팅 기록입니다.
+주간 영업 보고서용으로 간결하게 요약해 주세요.
+
+형식:
+1. 이번 주 핵심 요약 (2~3줄)
+2. 고객사별 주요 내용 (각 1~2줄)
+3. 다음 주 주요 액션 아이템
+
+미팅 기록:
+{chr(10).join(meeting_texts)}
+
+한국어로 작성하고, 텔레그램 HTML 태그(<b>, <i>) 활용해 가독성 높여주세요."""
+
+    try:
+        from openai import OpenAI
+        client = OpenAI(api_key=openai_key)
+        resp = client.chat.completions.create(
+            model="gpt-4o",
+            messages=[{"role": "user", "content": prompt}],
+            max_tokens=1500,
+            temperature=0.3,
+        )
+        summary = resp.choices[0].message.content.strip()
+    except Exception as exc:
+        print(f"GPT weekly summary failed: {exc}")
+        return False
+
+    header = f"📊 <b>주간 영업 보고 ({week_label})</b>\n미팅 {len(meetings)}건\n\n"
+    return send_message(header + summary, chat_id)
+
+
 def check_and_send_reminders(db) -> int:
     """Send due Telegram reminders and mark them as sent."""
     from database.models import Schedule
