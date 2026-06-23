@@ -1,9 +1,10 @@
 {
   "name": "Sales Intelligence Calendar",
   "short_name": "Sales Cal",
-  "start_url": "./",
+  "start_url": "/mobile/",
+  "scope": "/mobile/",
   "display": "standalone",
-  "background_color": "#f8fafc",
-  "theme_color": "#16a34a",
+  "background_color": "#ffffff",
+  "theme_color": "#ffffff",
   "icons": []
 }

@@ -13,7 +13,7 @@ except ModuleNotFoundError:  # Python 3.10 server runtime
     import tomli as tomllib
 
 from fastapi import Depends, FastAPI, Header, HTTPException
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
 from dotenv import load_dotenv
 from pydantic import BaseModel
@@ -112,6 +112,20 @@ def on_startup() -> None:
 @app.get("/")
 def index():
     return FileResponse(STATIC_DIR / "index.html")
+
+
+@app.get("/sw.js")
+def service_worker():
+    return FileResponse(
+        STATIC_DIR / "sw.js",
+        media_type="text/javascript",
+        headers={"Service-Worker-Allowed": "/mobile/"},
+    )
+
+
+@app.get("/static/")
+def static_index_redirect():
+    return Response(status_code=308, headers={"Location": "/"})
 
 
 @app.get("/health")
