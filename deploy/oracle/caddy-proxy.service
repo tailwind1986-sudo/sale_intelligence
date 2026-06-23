@@ -5,8 +5,8 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-ExecStart=/snap/bin/caddy run --config /var/snap/caddy/common/Caddyfile --adapter caddyfile
-ExecReload=/snap/bin/caddy reload --config /var/snap/caddy/common/Caddyfile --adapter caddyfile --force
+ExecStart=/snap/caddy/current/usr/bin/caddy run --config /var/snap/caddy/common/Caddyfile --adapter caddyfile
+ExecReload=/snap/caddy/current/usr/bin/caddy reload --config /var/snap/caddy/common/Caddyfile --adapter caddyfile --force
 TimeoutStopSec=5s
 LimitNOFILE=1048576
 Restart=on-failure

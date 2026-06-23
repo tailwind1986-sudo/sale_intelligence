@@ -1946,40 +1946,32 @@ def _render_mobile_calendar_stack(db, companies_all):
     selected_day = date.fromisoformat(st.session_state["mobile_cal_day"])
     st.caption(f"일정 {len(schedules)}건 · 미팅기록 {len(meetings)}건")
 
-    cells = [f"<div class='mobile-cal-weekday'>{label}</div>" for label in ["월", "화", "수", "목", "금", "토", "일"]]
+    st.markdown(
+        "<div class='mobile-cal-grid'>"
+        + "".join(f"<div class='mobile-cal-weekday'>{label}</div>" for label in ["월", "화", "수", "목", "금", "토", "일"])
+        + "</div>",
+        unsafe_allow_html=True,
+    )
     for week in monthcalendar(year, month):
-        for day_num in week:
+        cols = st.columns(7)
+        for idx, day_num in enumerate(week):
             if day_num == 0:
-                cells.append("<div class='mobile-cal-empty'></div>")
+                cols[idx].markdown("<div class='mobile-cal-empty'></div>", unsafe_allow_html=True)
                 continue
             day = date(year, month, day_num)
-            cells.append(_mobile_day_cell(day, selected_day, schedule_count_by_day.get(day, 0), meeting_count_by_day.get(day, 0)))
-    st.markdown("<div class='mobile-cal-grid'>" + "".join(cells) + "</div>", unsafe_allow_html=True)
-
-    day_options = [date(year, month, day_num) for week in monthcalendar(year, month) for day_num in week if day_num]
-    option_labels = []
-    for day in day_options:
-        marker = []
-        if schedule_count_by_day.get(day):
-            marker.append(f"일정 {schedule_count_by_day[day]}")
-        if meeting_count_by_day.get(day):
-            marker.append(f"미팅 {meeting_count_by_day[day]}")
-        suffix = f" ({', '.join(marker)})" if marker else ""
-        option_labels.append(f"{day.day}일{suffix}")
-    current_idx = next((idx for idx, day in enumerate(day_options) if day == selected_day), 0)
-    picked_day = st.selectbox(
-        "날짜 선택",
-        day_options,
-        index=current_idx,
-        format_func=lambda d: option_labels[day_options.index(d)],
-        key="mobile_day_picker",
-    )
-    if picked_day != selected_day:
-        st.session_state["mobile_cal_day"] = picked_day.isoformat()
-        st.session_state.pop("mobile_detail_id", None)
-        st.session_state.pop("mobile_detail_kind", None)
-        st.session_state.pop("mobile_add_mode", None)
-        st.rerun()
+            label_bits = [f"{day.day}"]
+            if schedule_count_by_day.get(day):
+                label_bits.append(f"일정 {schedule_count_by_day[day]}")
+            if meeting_count_by_day.get(day):
+                label_bits.append(f"미팅 {meeting_count_by_day[day]}")
+            label = "\n".join(label_bits)
+            button_type = "primary" if day == selected_day else "secondary"
+            if cols[idx].button(label, key=f"mobile_day_btn_{day.isoformat()}", type=button_type, use_container_width=True):
+                st.session_state["mobile_cal_day"] = day.isoformat()
+                st.session_state.pop("mobile_detail_id", None)
+                st.session_state.pop("mobile_detail_kind", None)
+                st.session_state.pop("mobile_add_mode", None)
+                st.rerun()
 
     st.divider()
     detail_id = st.session_state.get("mobile_detail_id")
@@ -2104,6 +2096,7 @@ def page_calendar():
     from database.models import Schedule
 
     st.title("일정 관리")
+    st.link_button("모바일 전용 일정관리 열기", "/mobile/", use_container_width=True)
 
     db = get_db()
     try:
