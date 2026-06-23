@@ -1,5 +1,6 @@
 http://:8501 {
     encode gzip
+    redir /mobile /mobile/
     handle_path /mobile* {
         reverse_proxy 127.0.0.1:8600
     }
@@ -8,6 +9,7 @@ http://:8501 {
 
 161.33.148.67.sslip.io {
     encode gzip
+    redir /mobile /mobile/
     handle_path /mobile* {
         reverse_proxy 127.0.0.1:8600
     }
