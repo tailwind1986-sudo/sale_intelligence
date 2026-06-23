@@ -1537,6 +1537,85 @@ EVENT_COLORS = {
 }
 
 
+def _save_schedule(db, title, description, start_dt, end_dt, all_day,
+                   color, company_id, remind_enabled, remind_minutes,
+                   schedule_id=None):
+    if schedule_id:
+        s = db.get(Schedule, schedule_id)
+        if s:
+            s.title = title; s.description = description
+            s.start_dt = start_dt; s.end_dt = end_dt; s.all_day = all_day
+            s.color = color; s.company_id = company_id
+            s.remind_enabled = remind_enabled; s.remind_minutes = remind_minutes
+            s.remind_sent = False
+    else:
+        db.add(Schedule(
+            title=title, description=description, start_dt=start_dt,
+            end_dt=end_dt, all_day=all_day, color=color,
+            company_id=company_id, remind_enabled=remind_enabled,
+            remind_minutes=remind_minutes,
+        ))
+    db.commit()
+
+
+def _schedule_form(db, companies_all, form_key, default_date=None,
+                   editing: Schedule = None):
+    """공통 일정 입력 폼. 저장 성공 시 True 반환."""
+    now = datetime.now()
+    default_start = date.fromisoformat(default_date) if default_date else date.today()
+    default_hour = now.hour if now.hour < 23 else 22
+
+    with st.form(form_key, clear_on_submit=True):
+        title = st.text_input("제목 *", value=editing.title if editing else "")
+        description = st.text_area("내용/메모", value=editing.description or "" if editing else "")
+
+        c1, c2 = st.columns(2)
+        with c1:
+            all_day = st.checkbox("종일 일정", value=editing.all_day if editing else False)
+            start_date = st.date_input("시작 날짜", value=editing.start_dt.date() if editing else default_start)
+            if not all_day:
+                start_time = st.time_input("시작 시간",
+                    value=editing.start_dt.time() if editing else now.replace(hour=default_hour, minute=0, second=0).time())
+        with c2:
+            color_names = list(EVENT_COLORS.keys())
+            color_vals  = list(EVENT_COLORS.values())
+            cur_color_idx = color_vals.index(editing.color) if editing and editing.color in color_vals else 0
+            color_label = st.selectbox("색상", color_names, index=cur_color_idx)
+            end_date = st.date_input("종료 날짜", value=editing.end_dt.date() if editing else default_start)
+            if not all_day:
+                end_h = min(default_hour + 1, 23)
+                end_time = st.time_input("종료 시간",
+                    value=editing.end_dt.time() if editing else now.replace(hour=end_h, minute=0, second=0).time())
+
+        company_opts = [None] + companies_all
+        cur_co_idx = next((i+1 for i, c in enumerate(companies_all) if editing and c.id == editing.company_id), 0)
+        linked_company = st.selectbox("고객사 연결 (선택)", company_opts,
+            index=cur_co_idx, format_func=lambda x: x.name if x else "없음")
+
+        st.divider()
+        col_r1, col_r2 = st.columns(2)
+        remind_enabled = col_r1.checkbox("텔레그램 알림", value=editing.remind_enabled if editing else True)
+        remind_opts = list(REMIND_OPTIONS.keys())
+        cur_remind = next((k for k, v in REMIND_OPTIONS.items() if editing and v == editing.remind_minutes), "하루 전")
+        remind_label = col_r2.selectbox("알림 시간", remind_opts,
+            index=remind_opts.index(cur_remind), disabled=not remind_enabled)
+
+        label = "💾 수정 저장" if editing else "💾 일정 저장"
+        if st.form_submit_button(label, type="primary"):
+            if not title:
+                st.error("제목은 필수입니다.")
+                return False
+            start_dt = datetime.combine(start_date, start_time if not all_day else datetime.min.time())
+            end_dt   = datetime.combine(end_date,   end_time   if not all_day else datetime.min.time())
+            _save_schedule(db, title, description or None, start_dt, end_dt, all_day,
+                           EVENT_COLORS[color_label],
+                           linked_company.id if linked_company else None,
+                           remind_enabled, REMIND_OPTIONS[remind_label],
+                           schedule_id=editing.id if editing else None)
+            return True
+    return False
+
+
 def page_calendar():
     from streamlit_calendar import calendar as st_calendar
     from services.telegram_service import check_and_send_reminders, send_message, _get_token, _get_chat_id
@@ -1558,14 +1637,16 @@ def page_calendar():
             if sent:
                 st.toast(f"텔레그램 알림 {sent}건 전송됨", icon="📨")
 
-        tab_cal, tab_add, tab_list, tab_settings = st.tabs(
-            ["📅 캘린더", "➕ 일정 추가", "📋 일정 목록", "⚙️ 텔레그램 설정"]
+        companies_all = db.query(Company).order_by(Company.name).all()
+
+        tab_cal, tab_list, tab_settings = st.tabs(
+            ["📅 캘린더", "📋 일정 목록", "⚙️ 텔레그램 설정"]
         )
 
         # ── 캘린더 뷰 ──
         with tab_cal:
             schedules = db.query(Schedule).options(
-                __import__("sqlalchemy.orm", fromlist=["joinedload"]).joinedload(Schedule.company)
+                joinedload(Schedule.company)
             ).all()
 
             events = []
@@ -1575,13 +1656,14 @@ def page_calendar():
                     "title": s.title,
                     "color": s.color or "#1E40AF",
                     "allDay": s.all_day,
+                    "extendedProps": {"company": s.company.name if s.company else ""},
                 }
                 if s.all_day:
                     ev["start"] = s.start_dt.strftime("%Y-%m-%d")
                     ev["end"] = s.end_dt.strftime("%Y-%m-%d")
                 else:
                     ev["start"] = s.start_dt.strftime("%Y-%m-%dT%H:%M:%S")
-                    ev["end"] = s.end_dt.strftime("%Y-%m-%dT%H:%M:%S")
+                    ev["end"]   = s.end_dt.strftime("%Y-%m-%dT%H:%M:%S")
                 if s.company:
                     ev["title"] = f"[{s.company.name}] {s.title}"
                 events.append(ev)
@@ -1596,121 +1678,137 @@ def page_calendar():
                 "locale": "ko",
                 "height": 650,
                 "selectable": True,
+                "selectMirror": True,
                 "editable": False,
+                "nowIndicator": True,
+                "dayMaxEvents": 3,
+                "businessHours": {"daysOfWeek": [1,2,3,4,5]},
             }
             custom_css = """
-                .fc-event { cursor: pointer; border-radius: 4px; font-size: 0.82rem; }
+                .fc-event { cursor: pointer; border-radius: 4px; font-size: 0.82rem; padding: 1px 3px; }
                 .fc-toolbar-title { font-size: 1.2rem !important; }
-                .fc-today-button { text-transform: capitalize !important; }
+                .fc-today { background: #EFF6FF !important; }
+                .fc-daygrid-day:hover { background: #F1F5F9; cursor: pointer; }
+                .fc-now-indicator { border-color: #DC2626; }
             """
-            result = st_calendar(events=events, options=calendar_options, custom_css=custom_css, key="main_cal")
+            result = st_calendar(events=events, options=calendar_options,
+                                 custom_css=custom_css, key="main_cal")
 
+            # 날짜 클릭 → 빠른 일정 추가
+            if result and result.get("dateClick"):
+                clicked = result["dateClick"]["date"][:10]
+                st.session_state["cal_clicked_date"] = clicked
+                st.session_state["cal_edit_id"] = None
+
+            # 이벤트 클릭 → 수정/삭제
             if result and result.get("eventClick"):
                 ev_id = int(result["eventClick"]["event"]["id"])
-                sel = db.get(Schedule, ev_id)
+                st.session_state["cal_edit_id"] = ev_id
+                st.session_state["cal_clicked_date"] = None
+
+            # 드래그 범위 선택 → 기간 일정 추가
+            if result and result.get("select"):
+                st.session_state["cal_clicked_date"] = result["select"]["start"][:10]
+                st.session_state["cal_select_end"]   = result["select"]["end"][:10]
+                st.session_state["cal_edit_id"] = None
+
+            st.divider()
+
+            # ── 날짜 클릭 시 빠른 추가 폼 ──
+            clicked_date = st.session_state.get("cal_clicked_date")
+            edit_id      = st.session_state.get("cal_edit_id")
+
+            if clicked_date:
+                st.markdown(f"### ➕ {clicked_date} 일정 추가")
+                if _schedule_form(db, companies_all, "quick_add_form",
+                                  default_date=clicked_date):
+                    st.session_state.pop("cal_clicked_date", None)
+                    st.session_state.pop("cal_select_end", None)
+                    st.toast("일정이 저장되었습니다.", icon="✅")
+                    st.rerun()
+                if st.button("✕ 취소", key="cancel_quick"):
+                    st.session_state.pop("cal_clicked_date", None)
+                    st.rerun()
+
+            elif edit_id:
+                sel = db.get(Schedule, edit_id)
                 if sel:
-                    with st.expander(f"📌 {sel.title}", expanded=True):
-                        c1, c2 = st.columns(2)
-                        c1.write(f"**시작:** {sel.start_dt.strftime('%Y-%m-%d %H:%M') if not sel.all_day else sel.start_dt.strftime('%Y-%m-%d')}")
-                        c2.write(f"**종료:** {sel.end_dt.strftime('%Y-%m-%d %H:%M') if not sel.all_day else sel.end_dt.strftime('%Y-%m-%d')}")
-                        if sel.company:
-                            st.write(f"**고객사:** {sel.company.name}")
-                        if sel.description:
-                            st.write(f"**내용:** {sel.description}")
-                        remind_label = next((k for k, v in REMIND_OPTIONS.items() if v == sel.remind_minutes), "사용자 정의")
-                        st.write(f"**알림:** {'켜짐 (' + remind_label + ')' if sel.remind_enabled else '꺼짐'}")
-                        if st.button("🗑️ 이 일정 삭제", key=f"del_ev_{ev_id}"):
-                            db.delete(sel)
-                            db.commit()
-                            st.toast("삭제되었습니다.", icon="🗑️")
-                            st.rerun()
+                    time_str = sel.start_dt.strftime("%Y-%m-%d %H:%M") if not sel.all_day else sel.start_dt.strftime("%Y-%m-%d")
+                    st.markdown(f"### 📌 {sel.title}  <small style='color:#64748b;font-size:0.85rem'>{time_str}</small>", unsafe_allow_html=True)
 
-        # ── 일정 추가 ──
-        with tab_add:
-            companies_all = db.query(Company).order_by(Company.name).all()
+                    # 요약 정보
+                    info_cols = st.columns(4)
+                    info_cols[0].markdown(f"**시작**  \n{time_str}")
+                    info_cols[1].markdown(f"**종료**  \n{sel.end_dt.strftime('%Y-%m-%d %H:%M') if not sel.all_day else sel.end_dt.strftime('%Y-%m-%d')}")
+                    info_cols[2].markdown(f"**고객사**  \n{sel.company.name if sel.company else '-'}")
+                    remind_lbl = next((k for k, v in REMIND_OPTIONS.items() if v == sel.remind_minutes), f"{sel.remind_minutes}분 전")
+                    info_cols[3].markdown(f"**알림**  \n{'✅ ' + remind_lbl if sel.remind_enabled else '❌ 꺼짐'}")
+                    if sel.description:
+                        st.info(sel.description)
 
-            st.subheader("새 일정 추가")
-            with st.form("schedule_form", clear_on_submit=True):
-                title = st.text_input("제목 *")
-                description = st.text_area("내용/메모")
-
-                c1, c2 = st.columns(2)
-                with c1:
-                    all_day = st.checkbox("종일 일정")
-                    start_date = st.date_input("시작 날짜", value=date.today())
-                    if not all_day:
-                        start_time = st.time_input("시작 시간", value=datetime.now().replace(minute=0, second=0).time())
-                with c2:
-                    color_label = st.selectbox("색상", list(EVENT_COLORS.keys()))
-                    end_date = st.date_input("종료 날짜", value=date.today())
-                    if not all_day:
-                        end_time = st.time_input("종료 시간", value=datetime.now().replace(hour=datetime.now().hour+1, minute=0, second=0).time() if datetime.now().hour < 23 else datetime.now().replace(minute=0, second=0).time())
-
-                company_opts = [None] + companies_all
-                linked_company = st.selectbox(
-                    "고객사 연결 (선택)",
-                    company_opts,
-                    format_func=lambda x: x.name if x else "없음",
-                )
-
-                st.divider()
-                remind_enabled = st.checkbox("텔레그램 알림", value=True)
-                remind_label = st.selectbox("알림 시간", list(REMIND_OPTIONS.keys()), index=3, disabled=not remind_enabled)
-
-                if st.form_submit_button("💾 일정 저장"):
-                    if not title:
-                        st.error("제목은 필수입니다.")
-                    else:
-                        if all_day:
-                            start_dt = datetime.combine(start_date, datetime.min.time())
-                            end_dt = datetime.combine(end_date, datetime.min.time())
-                        else:
-                            start_dt = datetime.combine(start_date, start_time)
-                            end_dt = datetime.combine(end_date, end_time)
-
-                        db.add(Schedule(
-                            title=title,
-                            description=description or None,
-                            start_dt=start_dt,
-                            end_dt=end_dt,
-                            all_day=all_day,
-                            color=EVENT_COLORS[color_label],
-                            company_id=linked_company.id if linked_company else None,
-                            remind_enabled=remind_enabled,
-                            remind_minutes=REMIND_OPTIONS[remind_label],
-                        ))
+                    col_edit, col_del, col_cancel = st.columns([1,1,2])
+                    show_edit = col_edit.button("✏️ 수정", key="btn_edit_ev")
+                    if col_del.button("🗑️ 삭제", key="btn_del_ev", type="primary"):
+                        db.delete(sel)
                         db.commit()
-                        st.toast("일정이 저장되었습니다.", icon="✅")
+                        st.session_state.pop("cal_edit_id", None)
+                        st.toast("삭제되었습니다.", icon="🗑️")
                         st.rerun()
+                    if col_cancel.button("✕ 닫기", key="btn_close_ev"):
+                        st.session_state.pop("cal_edit_id", None)
+                        st.rerun()
+
+                    if show_edit:
+                        st.session_state["cal_show_edit_form"] = True
+
+                    if st.session_state.get("cal_show_edit_form"):
+                        st.markdown("#### 일정 수정")
+                        if _schedule_form(db, companies_all, "edit_ev_form", editing=sel):
+                            st.session_state.pop("cal_edit_id", None)
+                            st.session_state.pop("cal_show_edit_form", None)
+                            st.toast("수정되었습니다.", icon="✅")
+                            st.rerun()
+            else:
+                st.caption("💡 캘린더에서 날짜를 클릭하면 일정을 바로 추가할 수 있습니다.")
 
         # ── 일정 목록 ──
         with tab_list:
-            schedules_all = db.query(Schedule).options(
-                __import__("sqlalchemy.orm", fromlist=["joinedload"]).joinedload(Schedule.company)
-            ).order_by(Schedule.start_dt).all()
+            col_f1, col_f2 = st.columns(2)
+            filter_upcoming = col_f1.checkbox("앞으로의 일정만", value=True)
+            filter_company  = col_f2.selectbox("고객사 필터", [None] + companies_all,
+                format_func=lambda x: x.name if x else "전체")
+
+            q = db.query(Schedule).options(joinedload(Schedule.company))
+            if filter_upcoming:
+                q = q.filter(Schedule.start_dt >= datetime.now())
+            if filter_company:
+                q = q.filter(Schedule.company_id == filter_company.id)
+            schedules_all = q.order_by(Schedule.start_dt).all()
 
             if not schedules_all:
-                st.info("등록된 일정이 없습니다.")
+                st.info("일정이 없습니다.")
             else:
                 for s in schedules_all:
                     passed = s.start_dt < datetime.now()
                     time_str = s.start_dt.strftime("%Y-%m-%d %H:%M") if not s.all_day else s.start_dt.strftime("%Y-%m-%d (종일)")
-                    label = f"{'~~' if passed else ''}📅 {time_str} | {s.title}{'~~' if passed else ''}"
-                    with st.expander(label):
-                        c1, c2 = st.columns(2)
+                    badge = "🔴" if passed else "🟢"
+                    with st.expander(f"{badge} {time_str} | **{s.title}**"):
+                        c1, c2, c3 = st.columns(3)
                         c1.write(f"**시작:** {time_str}")
                         c2.write(f"**종료:** {s.end_dt.strftime('%Y-%m-%d %H:%M') if not s.all_day else s.end_dt.strftime('%Y-%m-%d')}")
-                        if s.company:
-                            st.write(f"**고객사:** {s.company.name}")
+                        c3.write(f"**고객사:** {s.company.name if s.company else '-'}")
                         if s.description:
                             st.write(f"**내용:** {s.description}")
                         remind_lbl = next((k for k, v in REMIND_OPTIONS.items() if v == s.remind_minutes), f"{s.remind_minutes}분 전")
                         st.write(f"**알림:** {'✅ ' + remind_lbl if s.remind_enabled else '❌ 꺼짐'} {'(전송완료)' if s.remind_sent else ''}")
-                        if st.button("🗑️ 삭제", key=f"del_sched_{s.id}"):
-                            db.delete(s)
-                            db.commit()
-                            st.toast("삭제되었습니다.", icon="🗑️")
-                            st.rerun()
+                        col_d1, col_d2 = st.columns([1, 4])
+                        if col_d1.button("🗑️ 삭제", key=f"del_sched_{s.id}"):
+                            to_del = db.get(Schedule, s.id)
+                            if to_del:
+                                db.delete(to_del)
+                                db.commit()
+                                st.toast("삭제되었습니다.", icon="🗑️")
+                                st.rerun()
 
         # ── 텔레그램 설정 ──
         with tab_settings:
