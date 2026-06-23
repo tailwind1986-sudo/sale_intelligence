@@ -796,6 +796,16 @@ def page_meeting_results():
             format_func=lambda m: f"{fmt_date(m.meeting_date)} | {m.company.name} | {m.meeting_type or '-'}",
         )
 
+        # 미팅 삭제
+        with st.expander("⚠️ 이 미팅 삭제"):
+            st.warning(f"**{fmt_date(sel_meeting.meeting_date)} | {sel_meeting.company.name}** 미팅을 삭제하면 분석결과·약속·액션아이템이 모두 삭제됩니다.")
+            if st.button("🗑️ 미팅 삭제 확인", type="primary"):
+                db.delete(sel_meeting)
+                db.commit()
+                st.session_state.pop("last_meeting_id", None)
+                st.success("삭제되었습니다.")
+                st.rerun()
+
         # 수동 분석 트리거
         if not sel_meeting.analysis:
             st.warning("이 미팅은 아직 AI 분석이 실행되지 않았습니다.")
