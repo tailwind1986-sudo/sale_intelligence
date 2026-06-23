@@ -1706,82 +1706,163 @@ def page_calendar():
             result = st_calendar(events=events, options=calendar_options,
                                  custom_css=custom_css, key="main_cal")
 
-            # 날짜 클릭 → 빠른 일정 추가
+            # ── 캘린더 이벤트 처리 ──
             if result and result.get("dateClick"):
-                clicked = result["dateClick"]["date"][:10]
-                st.session_state["cal_clicked_date"] = clicked
-                st.session_state["cal_edit_id"] = None
+                st.session_state["cal_day"] = result["dateClick"]["date"][:10]
+                st.session_state.pop("cal_detail_id", None)
+                st.session_state.pop("cal_add_mode", None)
+                st.session_state.pop("cal_show_edit_form", None)
 
-            # 이벤트 클릭 → 수정/삭제
             if result and result.get("eventClick"):
                 ev_id = int(result["eventClick"]["event"]["id"])
-                st.session_state["cal_edit_id"] = ev_id
-                st.session_state["cal_clicked_date"] = None
+                # 해당 이벤트의 날짜도 함께 저장 (뒤로가기용)
+                ev_date = result["eventClick"]["event"]["start"][:10]
+                st.session_state["cal_day"] = ev_date
+                st.session_state["cal_detail_id"] = ev_id
+                st.session_state.pop("cal_add_mode", None)
+                st.session_state.pop("cal_show_edit_form", None)
 
-            # 드래그 범위 선택 → 기간 일정 추가
             if result and result.get("select"):
-                st.session_state["cal_clicked_date"] = result["select"]["start"][:10]
-                st.session_state["cal_select_end"]   = result["select"]["end"][:10]
-                st.session_state["cal_edit_id"] = None
+                st.session_state["cal_day"] = result["select"]["start"][:10]
+                st.session_state["cal_add_mode"] = True
+                st.session_state.pop("cal_detail_id", None)
+                st.session_state.pop("cal_show_edit_form", None)
 
             st.divider()
 
-            # ── 날짜 클릭 시 빠른 추가 폼 ──
-            clicked_date = st.session_state.get("cal_clicked_date")
-            edit_id      = st.session_state.get("cal_edit_id")
+            cal_day       = st.session_state.get("cal_day")
+            cal_detail_id = st.session_state.get("cal_detail_id")
+            cal_add_mode  = st.session_state.get("cal_add_mode", False)
 
-            if clicked_date:
-                st.markdown(f"### ➕ {clicked_date} 일정 추가")
-                if _schedule_form(db, companies_all, "quick_add_form",
-                                  default_date=clicked_date):
-                    st.session_state.pop("cal_clicked_date", None)
-                    st.session_state.pop("cal_select_end", None)
-                    st.toast("일정이 저장되었습니다.", icon="✅")
-                    st.rerun()
-                if st.button("✕ 취소", key="cancel_quick"):
-                    st.session_state.pop("cal_clicked_date", None)
-                    st.rerun()
-
-            elif edit_id:
-                sel = db.get(Schedule, edit_id)
+            # ══════════════════════════════════════════════
+            # LEVEL 3 : 일정 상세 / 수정
+            # ══════════════════════════════════════════════
+            if cal_detail_id:
+                sel = db.get(Schedule, cal_detail_id)
                 if sel:
-                    time_str = sel.start_dt.strftime("%Y-%m-%d %H:%M") if not sel.all_day else sel.start_dt.strftime("%Y-%m-%d")
-                    st.markdown(f"### 📌 {sel.title}  <small style='color:#64748b;font-size:0.85rem'>{time_str}</small>", unsafe_allow_html=True)
+                    # 헤더: 뒤로가기 + 제목
+                    h_col1, h_col2 = st.columns([1, 6])
+                    if h_col1.button("← 뒤로", key="back_to_day"):
+                        st.session_state.pop("cal_detail_id", None)
+                        st.session_state.pop("cal_show_edit_form", None)
+                        st.rerun()
 
-                    # 요약 정보
-                    info_cols = st.columns(4)
-                    info_cols[0].markdown(f"**시작**  \n{time_str}")
-                    info_cols[1].markdown(f"**종료**  \n{sel.end_dt.strftime('%Y-%m-%d %H:%M') if not sel.all_day else sel.end_dt.strftime('%Y-%m-%d')}")
-                    info_cols[2].markdown(f"**고객사**  \n{sel.company.name if sel.company else '-'}")
+                    # 일정 상세 카드
+                    date_str  = sel.start_dt.strftime("%Y년 %m월 %d일 (%a)")
+                    start_str = sel.start_dt.strftime("%H:%M") if not sel.all_day else "종일"
+                    end_str   = sel.end_dt.strftime("%H:%M")   if not sel.all_day else ""
+
+                    st.markdown(f"""
+<div style="background:#F8FAFC;border-radius:12px;padding:20px 24px;border:1px solid #E2E8F0;margin-bottom:12px;">
+  <div style="font-size:1.4rem;font-weight:700;color:#1E40AF;margin-bottom:8px;">{sel.title}</div>
+  <div style="color:#64748B;font-size:0.9rem;margin-bottom:12px;">{date_str}</div>
+  <div style="font-size:1.1rem;font-weight:600;color:#0F172A;">
+    {"종일" if sel.all_day else f"🕐 {start_str} → {end_str}"}
+  </div>
+  {"<div style='margin-top:8px;color:#475569;'>🏢 " + sel.company.name + "</div>" if sel.company else ""}
+  {"<div style='margin-top:8px;color:#475569;'>📝 " + sel.description + "</div>" if sel.description else ""}
+</div>
+""", unsafe_allow_html=True)
+
                     remind_lbl = next((k for k, v in REMIND_OPTIONS.items() if v == sel.remind_minutes), f"{sel.remind_minutes}분 전")
-                    info_cols[3].markdown(f"**알림**  \n{'✅ ' + remind_lbl if sel.remind_enabled else '❌ 꺼짐'}")
-                    if sel.description:
-                        st.info(sel.description)
+                    st.markdown(f"🔔 알림: **{'✅ ' + remind_lbl if sel.remind_enabled else '❌ 꺼짐'}**")
+                    if sel.remind_sent:
+                        st.caption("(알림 전송 완료)")
 
-                    col_edit, col_del, col_cancel = st.columns([1,1,2])
-                    show_edit = col_edit.button("✏️ 수정", key="btn_edit_ev")
-                    if col_del.button("🗑️ 삭제", key="btn_del_ev", type="primary"):
+                    st.markdown("---")
+                    col_edit, col_del = st.columns(2)
+                    if col_edit.button("✏️ 수정", key="btn_detail_edit", use_container_width=True):
+                        st.session_state["cal_show_edit_form"] = True
+                    if col_del.button("🗑️ 삭제", key="btn_detail_del",
+                                      type="primary", use_container_width=True):
                         db.delete(sel)
                         db.commit()
-                        st.session_state.pop("cal_edit_id", None)
+                        st.session_state.pop("cal_detail_id", None)
+                        st.session_state.pop("cal_show_edit_form", None)
                         st.toast("삭제되었습니다.", icon="🗑️")
                         st.rerun()
-                    if col_cancel.button("✕ 닫기", key="btn_close_ev"):
-                        st.session_state.pop("cal_edit_id", None)
-                        st.rerun()
-
-                    if show_edit:
-                        st.session_state["cal_show_edit_form"] = True
 
                     if st.session_state.get("cal_show_edit_form"):
-                        st.markdown("#### 일정 수정")
+                        st.markdown("#### ✏️ 일정 수정")
                         if _schedule_form(db, companies_all, "edit_ev_form", editing=sel):
-                            st.session_state.pop("cal_edit_id", None)
+                            st.session_state.pop("cal_detail_id", None)
                             st.session_state.pop("cal_show_edit_form", None)
                             st.toast("수정되었습니다.", icon="✅")
                             st.rerun()
+
+            # ══════════════════════════════════════════════
+            # LEVEL 2 : 날짜별 일정 목록
+            # ══════════════════════════════════════════════
+            elif cal_day:
+                try:
+                    day_dt = datetime.strptime(cal_day, "%Y-%m-%d")
+                except ValueError:
+                    day_dt = datetime.now()
+
+                # 헤더
+                weekday_ko = ["월", "화", "수", "목", "금", "토", "일"]
+                day_label  = f"{day_dt.year}년 {day_dt.month}월 {day_dt.day}일 ({weekday_ko[day_dt.weekday()]})"
+                hc1, hc2, hc3 = st.columns([1, 5, 1])
+                if hc1.button("← 캘린더", key="back_to_cal"):
+                    st.session_state.pop("cal_day", None)
+                    st.rerun()
+                hc2.markdown(f"### {day_label}")
+                if hc3.button("＋ 추가", key="btn_day_add"):
+                    st.session_state["cal_add_mode"] = True
+                    st.rerun()
+
+                # 해당 날짜의 일정 조회
+                day_start = day_dt.replace(hour=0,  minute=0,  second=0)
+                day_end   = day_dt.replace(hour=23, minute=59, second=59)
+                day_scheds = (
+                    db.query(Schedule)
+                    .options(joinedload(Schedule.company))
+                    .filter(Schedule.start_dt <= day_end, Schedule.end_dt >= day_start)
+                    .order_by(Schedule.all_day.desc(), Schedule.start_dt)
+                    .all()
+                )
+
+                if not day_scheds:
+                    st.info("이 날 등록된 일정이 없습니다.")
+                else:
+                    for s in day_scheds:
+                        if s.all_day:
+                            time_label = "종일"
+                            time_end   = ""
+                        else:
+                            time_label = s.start_dt.strftime("%H:%M")
+                            time_end   = s.end_dt.strftime("%H:%M")
+
+                        bar_color = s.color or "#1E40AF"
+                        company_badge = f"<span style='background:{bar_color};color:#fff;border-radius:4px;padding:1px 6px;font-size:0.75rem;'>{s.company.name}</span>" if s.company else ""
+
+                        clicked_item = st.button(
+                            f"{'종일  ' if s.all_day else f'{time_label} → {time_end}  '}  {s.title}",
+                            key=f"day_item_{s.id}",
+                            use_container_width=True,
+                        )
+                        if clicked_item:
+                            st.session_state["cal_detail_id"] = s.id
+                            st.session_state.pop("cal_add_mode", None)
+                            st.rerun()
+
+                # 일정 추가 폼 (＋ 추가 버튼 눌렀을 때)
+                if cal_add_mode:
+                    st.markdown("---")
+                    st.markdown(f"#### ➕ {day_label} 일정 추가")
+                    if _schedule_form(db, companies_all, "day_add_form", default_date=cal_day):
+                        st.session_state.pop("cal_add_mode", None)
+                        st.toast("일정이 저장되었습니다.", icon="✅")
+                        st.rerun()
+                    if st.button("✕ 취소", key="cancel_day_add"):
+                        st.session_state.pop("cal_add_mode", None)
+                        st.rerun()
+
+            # ══════════════════════════════════════════════
+            # LEVEL 1 : 기본 안내
+            # ══════════════════════════════════════════════
             else:
-                st.caption("💡 캘린더에서 날짜를 클릭하면 일정을 바로 추가할 수 있습니다.")
+                st.caption("💡 캘린더에서 날짜를 클릭하면 해당 날의 일정을 확인할 수 있습니다.")
 
         # ── 일정 목록 ──
         with tab_list:
