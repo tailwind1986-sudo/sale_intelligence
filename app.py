@@ -148,8 +148,13 @@ st.markdown("""
 
 # ─── 헬퍼 ────────────────────────────────────────────────────────────────────
 
-def get_db():
+@st.cache_resource
+def _get_cached_session():
+    """앱 전체에서 하나의 DB 세션을 재사용 (연결 오버헤드 제거)."""
     return SessionLocal()
+
+def get_db():
+    return _get_cached_session()
 
 
 def risk_badge(level: str) -> str:
@@ -1541,9 +1546,15 @@ def page_calendar():
 
     db = get_db()
     try:
-        # ── 알림 자동 체크 (페이지 로드 시) ──
+        # ── 알림 자동 체크 (60초에 한 번만 실행) ──
+        @st.cache_data(ttl=60, show_spinner=False)
+        def _check_reminders_cached(_tick):
+            return check_and_send_reminders(db)
+
         if _get_token() and _get_chat_id():
-            sent = check_and_send_reminders(db)
+            import time as _time
+            tick = int(_time.time() // 60)
+            sent = _check_reminders_cached(tick)
             if sent:
                 st.toast(f"텔레그램 알림 {sent}건 전송됨", icon="📨")
 
