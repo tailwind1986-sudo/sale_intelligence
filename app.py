@@ -1712,33 +1712,85 @@ def page_calendar():
         if calendar_view == "📅 캘린더":
             # ── 년/월 드롭다운 네비게이터 ──
             now = datetime.now()
-            nav_col1, nav_col2, nav_col3 = st.columns([1, 1, 4])
+            nav_col1, nav_col2, nav_col3, nav_col4 = st.columns([1, 1, 2, 2])
             nav_year  = nav_col1.selectbox("년도", list(range(now.year - 2, now.year + 5)),
                                            index=2, key="cal_nav_year", label_visibility="collapsed")
             nav_month = nav_col2.selectbox("월", list(range(1, 13)),
                                            index=now.month - 1, key="cal_nav_month", label_visibility="collapsed",
                                            format_func=lambda m: f"{m}월")
+            keyword = nav_col3.text_input("일정 검색", placeholder="제목, 고객사, 미팅 내용", label_visibility="collapsed")
+            filter_company = nav_col4.selectbox(
+                "고객사 필터",
+                [None] + companies_all,
+                format_func=lambda x: x.name if x else "전체 고객사",
+                label_visibility="collapsed",
+                key="cal_company_filter",
+            )
+
+            type_col1, type_col2, type_col3, type_col4 = st.columns([1, 1, 1, 3])
+            show_schedules = type_col1.checkbox("일정", value=True, key="cal_show_schedules")
+            show_meetings = type_col2.checkbox("미팅기록", value=True, key="cal_show_meetings")
+            if type_col3.button("오늘", use_container_width=True):
+                st.session_state["cal_day"] = date.today().isoformat()
+                st.session_state.pop("cal_detail_id", None)
+                st.session_state.pop("cal_detail_kind", None)
+                st.session_state.pop("cal_add_mode", None)
+                st.rerun()
+
             initial_date = f"{nav_year}-{nav_month:02d}-01"
             month_start = datetime(nav_year, nav_month, 1)
             month_end = datetime(nav_year, nav_month, monthrange(nav_year, nav_month)[1], 23, 59, 59)
             window_start = month_start - timedelta(days=7)
             window_end = month_end + timedelta(days=7)
 
-            schedules = db.query(Schedule).options(
-                joinedload(Schedule.company)
-            ).filter(
+            schedules_q = db.query(Schedule).options(joinedload(Schedule.company)).filter(
                 Schedule.start_dt <= window_end,
                 Schedule.end_dt >= window_start,
-            ).all()
+            )
+            meetings_q = db.query(MeetingRecord).options(
+                joinedload(MeetingRecord.company),
+                joinedload(MeetingRecord.analysis),
+            ).filter(
+                MeetingRecord.meeting_date >= window_start.date(),
+                MeetingRecord.meeting_date <= window_end.date(),
+            )
+            if filter_company:
+                schedules_q = schedules_q.filter(Schedule.company_id == filter_company.id)
+                meetings_q = meetings_q.filter(MeetingRecord.company_id == filter_company.id)
+
+            schedules = schedules_q.order_by(Schedule.start_dt).all() if show_schedules else []
+            meetings = meetings_q.order_by(MeetingRecord.meeting_date.desc()).all() if show_meetings else []
+
+            keyword_norm = keyword.strip().lower()
+            if keyword_norm:
+                schedules = [
+                    s for s in schedules
+                    if keyword_norm in (s.title or "").lower()
+                    or keyword_norm in (s.description or "").lower()
+                    or keyword_norm in ((s.company.name if s.company else "")).lower()
+                ]
+                meetings = [
+                    m for m in meetings
+                    if keyword_norm in (m.raw_text or "").lower()
+                    or keyword_norm in (m.attendees or "").lower()
+                    or keyword_norm in ((m.company.name if m.company else "")).lower()
+                    or keyword_norm in ((m.analysis.one_line_summary if m.analysis else "") or "").lower()
+                ]
+
+            kpi1, kpi2, kpi3, kpi4 = st.columns(4)
+            kpi1.metric("이번 화면 일정", len(schedules))
+            kpi2.metric("미팅기록", len(meetings))
+            kpi3.metric("오늘 일정", sum(1 for s in schedules if s.start_dt.date() <= date.today() <= s.end_dt.date()))
+            kpi4.metric("이번 달 미팅", sum(1 for m in meetings if m.meeting_date and m.meeting_date.month == nav_month and m.meeting_date.year == nav_year))
 
             events = []
             for s in schedules:
                 ev = {
-                    "id": str(s.id),
+                    "id": f"s-{s.id}",
                     "title": s.title,
                     "color": s.color or "#1E40AF",
                     "allDay": s.all_day,
-                    "extendedProps": {"company": s.company.name if s.company else ""},
+                    "extendedProps": {"company": s.company.name if s.company else "", "kind": "schedule"},
                 }
                 if s.all_day:
                     ev["start"] = s.start_dt.strftime("%Y-%m-%d")
@@ -1750,6 +1802,19 @@ def page_calendar():
                 if s.company:
                     ev["title"] = f"[{s.company.name}] {s.title}"
                 events.append(ev)
+
+            for m in meetings:
+                if not m.meeting_date:
+                    continue
+                company_name = m.company.name if m.company else "고객사"
+                events.append({
+                    "id": f"m-{m.id}",
+                    "title": f"미팅: {company_name}",
+                    "start": m.meeting_date.strftime("%Y-%m-%d"),
+                    "allDay": True,
+                    "color": "#14B8A6",
+                    "extendedProps": {"company": company_name, "kind": "meeting"},
+                })
 
             calendar_options = {
                 "initialView": "dayGridMonth",
@@ -1770,27 +1835,33 @@ def page_calendar():
             }
             custom_css = """
                 .fc-event { cursor: pointer; border-radius: 4px; font-size: 0.82rem; padding: 1px 3px; }
+                .fc-event-title { font-weight: 600; }
                 .fc-toolbar-title { font-size: 1.2rem !important; }
                 .fc-today { background: #EFF6FF !important; }
                 .fc-daygrid-day:hover { background: #F1F5F9; cursor: pointer; }
                 .fc-now-indicator { border-color: #DC2626; }
             """
-            result = st_calendar(events=events, options=calendar_options,
-                                 custom_css=custom_css, key="main_cal")
+            cal_col, side_col = st.columns([2.2, 1])
+            with cal_col:
+                result = st_calendar(events=events, options=calendar_options,
+                                     custom_css=custom_css, key="main_cal")
 
             # ── 캘린더 이벤트 처리 ──
             if result and result.get("dateClick"):
                 st.session_state["cal_day"] = result["dateClick"]["date"][:10]
                 st.session_state.pop("cal_detail_id", None)
+                st.session_state.pop("cal_detail_kind", None)
                 st.session_state.pop("cal_add_mode", None)
                 st.session_state.pop("cal_show_edit_form", None)
 
             if result and result.get("eventClick"):
-                ev_id = int(result["eventClick"]["event"]["id"])
+                ev_raw_id = result["eventClick"]["event"]["id"]
+                kind, raw_id = ev_raw_id.split("-", 1)
                 # 해당 이벤트의 날짜도 함께 저장 (뒤로가기용)
                 ev_date = result["eventClick"]["event"]["start"][:10]
                 st.session_state["cal_day"] = ev_date
-                st.session_state["cal_detail_id"] = ev_id
+                st.session_state["cal_detail_kind"] = "meeting" if kind == "m" else "schedule"
+                st.session_state["cal_detail_id"] = int(raw_id)
                 st.session_state.pop("cal_add_mode", None)
                 st.session_state.pop("cal_show_edit_form", None)
 
@@ -1798,143 +1869,166 @@ def page_calendar():
                 st.session_state["cal_day"] = result["select"]["start"][:10]
                 st.session_state["cal_add_mode"] = True
                 st.session_state.pop("cal_detail_id", None)
+                st.session_state.pop("cal_detail_kind", None)
                 st.session_state.pop("cal_show_edit_form", None)
-
-            st.divider()
 
             cal_day       = st.session_state.get("cal_day")
             cal_detail_id = st.session_state.get("cal_detail_id")
+            cal_detail_kind = st.session_state.get("cal_detail_kind", "schedule")
             cal_add_mode  = st.session_state.get("cal_add_mode", False)
 
-            # ══════════════════════════════════════════════
-            # LEVEL 3 : 일정 상세 / 수정
-            # ══════════════════════════════════════════════
-            if cal_detail_id:
-                sel = db.get(Schedule, cal_detail_id)
-                if sel:
-                    # 헤더: 뒤로가기 + 제목
-                    h_col1, h_col2 = st.columns([1, 6])
-                    if h_col1.button("← 뒤로", key="back_to_day"):
-                        st.session_state.pop("cal_detail_id", None)
-                        st.session_state.pop("cal_show_edit_form", None)
-                        st.rerun()
-
-                    # 일정 상세 카드
-                    date_str  = sel.start_dt.strftime("%Y년 %m월 %d일 (%a)")
-                    start_str = sel.start_dt.strftime("%H:%M") if not sel.all_day else "종일"
-                    end_str   = sel.end_dt.strftime("%H:%M")   if not sel.all_day else ""
-
-                    st.markdown(f"""
-<div style="background:#F8FAFC;border-radius:12px;padding:20px 24px;border:1px solid #E2E8F0;margin-bottom:12px;">
-  <div style="font-size:1.4rem;font-weight:700;color:#1E40AF;margin-bottom:8px;">{sel.title}</div>
-  <div style="color:#64748B;font-size:0.9rem;margin-bottom:12px;">{date_str}</div>
-  <div style="font-size:1.1rem;font-weight:600;color:#0F172A;">
-    {"종일" if sel.all_day else f"🕐 {start_str} → {end_str}"}
-  </div>
-  {"<div style='margin-top:8px;color:#475569;'>🏢 " + sel.company.name + "</div>" if sel.company else ""}
-  {"<div style='margin-top:8px;color:#475569;'>📝 " + sel.description + "</div>" if sel.description else ""}
-</div>
-""", unsafe_allow_html=True)
-
-                    remind_lbl = next((k for k, v in REMIND_OPTIONS.items() if v == sel.remind_minutes), f"{sel.remind_minutes}분 전")
-                    st.markdown(f"🔔 알림: **{'✅ ' + remind_lbl if sel.remind_enabled else '❌ 꺼짐'}**")
-                    if sel.remind_sent:
-                        st.caption("(알림 전송 완료)")
-
-                    st.markdown("---")
-                    col_edit, col_del = st.columns(2)
-                    if col_edit.button("✏️ 수정", key="btn_detail_edit", use_container_width=True):
-                        st.session_state["cal_show_edit_form"] = True
-                    if col_del.button("🗑️ 삭제", key="btn_detail_del",
-                                      type="primary", use_container_width=True):
-                        db.delete(sel)
-                        db.commit()
-                        st.session_state.pop("cal_detail_id", None)
-                        st.session_state.pop("cal_show_edit_form", None)
-                        st.toast("삭제되었습니다.", icon="🗑️")
-                        st.rerun()
-
-                    if st.session_state.get("cal_show_edit_form"):
-                        st.markdown("#### ✏️ 일정 수정")
-                        if _schedule_form(db, companies_all, "edit_ev_form", editing=sel):
+            with side_col:
+                # ══════════════════════════════════════════════
+                # LEVEL 3 : 일정/미팅 상세
+                # ══════════════════════════════════════════════
+                if cal_detail_id and cal_detail_kind == "schedule":
+                    sel = db.get(Schedule, cal_detail_id)
+                    if not sel:
+                        st.warning("일정을 찾을 수 없습니다.")
+                    else:
+                        if st.button("← 선택일", key="back_to_day", use_container_width=True):
                             st.session_state.pop("cal_detail_id", None)
+                            st.session_state.pop("cal_detail_kind", None)
                             st.session_state.pop("cal_show_edit_form", None)
-                            st.toast("수정되었습니다.", icon="✅")
                             st.rerun()
 
-            # ══════════════════════════════════════════════
-            # LEVEL 2 : 날짜별 일정 목록
-            # ══════════════════════════════════════════════
-            elif cal_day:
-                try:
-                    day_dt = datetime.strptime(cal_day, "%Y-%m-%d")
-                except ValueError:
-                    day_dt = datetime.now()
+                        date_str  = sel.start_dt.strftime("%Y년 %m월 %d일")
+                        start_str = sel.start_dt.strftime("%H:%M") if not sel.all_day else "종일"
+                        end_str   = sel.end_dt.strftime("%H:%M")   if not sel.all_day else ""
+                        st.markdown(f"### {sel.title}")
+                        st.caption(date_str)
+                        st.write("종일" if sel.all_day else f"{start_str} → {end_str}")
+                        if sel.company:
+                            st.write(f"**고객사:** {sel.company.name}")
+                        if sel.description:
+                            st.write(sel.description)
 
-                # 헤더
-                weekday_ko = ["월", "화", "수", "목", "금", "토", "일"]
-                day_label  = f"{day_dt.year}년 {day_dt.month}월 {day_dt.day}일 ({weekday_ko[day_dt.weekday()]})"
-                hc1, hc2, hc3 = st.columns([1, 5, 1])
-                if hc1.button("← 캘린더", key="back_to_cal"):
-                    st.session_state.pop("cal_day", None)
-                    st.rerun()
-                hc2.markdown(f"### {day_label}")
-                if hc3.button("＋ 추가", key="btn_day_add"):
-                    st.session_state["cal_add_mode"] = True
-                    st.rerun()
+                        remind_lbl = next((k for k, v in REMIND_OPTIONS.items() if v == sel.remind_minutes), f"{sel.remind_minutes}분 전")
+                        st.write(f"**알림:** {'ON ' + remind_lbl if sel.remind_enabled else 'OFF'}")
+                        if sel.remind_sent:
+                            st.caption("알림 전송 완료")
 
-                # 해당 날짜의 일정 조회
-                day_start = day_dt.replace(hour=0,  minute=0,  second=0)
-                day_end   = day_dt.replace(hour=23, minute=59, second=59)
-                day_scheds = (
-                    db.query(Schedule)
-                    .options(joinedload(Schedule.company))
-                    .filter(Schedule.start_dt <= day_end, Schedule.end_dt >= day_start)
-                    .order_by(Schedule.all_day.desc(), Schedule.start_dt)
-                    .all()
-                )
+                        col_edit, col_del = st.columns(2)
+                        if col_edit.button("수정", key="btn_detail_edit", use_container_width=True):
+                            st.session_state["cal_show_edit_form"] = True
+                        if col_del.button("삭제", key="btn_detail_del", type="primary", use_container_width=True):
+                            db.delete(sel)
+                            db.commit()
+                            st.session_state.pop("cal_detail_id", None)
+                            st.session_state.pop("cal_detail_kind", None)
+                            st.session_state.pop("cal_show_edit_form", None)
+                            st.toast("삭제되었습니다.", icon="🗑️")
+                            st.rerun()
 
-                if not day_scheds:
-                    st.info("이 날 등록된 일정이 없습니다.")
+                        if st.session_state.get("cal_show_edit_form"):
+                            st.divider()
+                            if _schedule_form(db, companies_all, "edit_ev_form", editing=sel):
+                                st.session_state.pop("cal_detail_id", None)
+                                st.session_state.pop("cal_detail_kind", None)
+                                st.session_state.pop("cal_show_edit_form", None)
+                                st.toast("수정되었습니다.", icon="✅")
+                                st.rerun()
+
+                elif cal_detail_id and cal_detail_kind == "meeting":
+                    meeting = db.query(MeetingRecord).options(
+                        joinedload(MeetingRecord.company),
+                        joinedload(MeetingRecord.analysis),
+                    ).filter(MeetingRecord.id == cal_detail_id).first()
+                    if not meeting:
+                        st.warning("미팅 기록을 찾을 수 없습니다.")
+                    else:
+                        if st.button("← 선택일", key="back_to_day_meeting", use_container_width=True):
+                            st.session_state.pop("cal_detail_id", None)
+                            st.session_state.pop("cal_detail_kind", None)
+                            st.rerun()
+                        st.markdown(f"### 미팅: {meeting.company.name if meeting.company else '-'}")
+                        st.caption(fmt_date(meeting.meeting_date))
+                        st.write(f"**유형:** {meeting.meeting_type or '-'}")
+                        if meeting.attendees:
+                            st.write(f"**참석자:** {meeting.attendees}")
+                        if meeting.analysis and meeting.analysis.one_line_summary:
+                            st.info(meeting.analysis.one_line_summary)
+                        elif meeting.raw_text:
+                            st.write((meeting.raw_text or "")[:300])
+                        if st.button("미팅 요약에서 보기", use_container_width=True):
+                            st.session_state["last_meeting_id"] = meeting.id
+                            st.session_state["selected_menu"] = "📋 미팅 요약 결과"
+                            st.rerun()
+
+                # ══════════════════════════════════════════════
+                # LEVEL 2 : 선택일 일정 목록
+                # ══════════════════════════════════════════════
                 else:
+                    cal_day = cal_day or date.today().isoformat()
+                    try:
+                        day_dt = datetime.strptime(cal_day, "%Y-%m-%d")
+                    except ValueError:
+                        day_dt = datetime.now()
+
+                    weekday_ko = ["월", "화", "수", "목", "금", "토", "일"]
+                    day_label  = f"{day_dt.month}월 {day_dt.day}일 ({weekday_ko[day_dt.weekday()]})"
+                    st.markdown(f"### {day_label}")
+                    if st.button("일정 추가", key="btn_day_add", type="primary", use_container_width=True):
+                        st.session_state["cal_day"] = day_dt.date().isoformat()
+                        st.session_state["cal_add_mode"] = True
+                        st.rerun()
+
+                    day_start = day_dt.replace(hour=0,  minute=0,  second=0)
+                    day_end   = day_dt.replace(hour=23, minute=59, second=59)
+                    day_scheds = (
+                        db.query(Schedule)
+                        .options(joinedload(Schedule.company))
+                        .filter(Schedule.start_dt <= day_end, Schedule.end_dt >= day_start)
+                        .order_by(Schedule.all_day.desc(), Schedule.start_dt)
+                        .all()
+                    )
+                    day_meetings = (
+                        db.query(MeetingRecord)
+                        .options(joinedload(MeetingRecord.company), joinedload(MeetingRecord.analysis))
+                        .filter(MeetingRecord.meeting_date == day_dt.date())
+                        .order_by(MeetingRecord.created_at.desc())
+                        .all()
+                    )
+
+                    if filter_company:
+                        day_scheds = [s for s in day_scheds if s.company_id == filter_company.id]
+                        day_meetings = [m for m in day_meetings if m.company_id == filter_company.id]
+
+                    if not day_scheds and not day_meetings:
+                        st.info("선택한 날짜의 일정이나 미팅 기록이 없습니다.")
+
                     for s in day_scheds:
-                        if s.all_day:
-                            time_label = "종일"
-                            time_end   = ""
-                        else:
-                            time_label = s.start_dt.strftime("%H:%M")
-                            time_end   = s.end_dt.strftime("%H:%M")
-
-                        bar_color = s.color or "#1E40AF"
-                        company_badge = f"<span style='background:{bar_color};color:#fff;border-radius:4px;padding:1px 6px;font-size:0.75rem;'>{s.company.name}</span>" if s.company else ""
-
-                        clicked_item = st.button(
-                            f"{'종일  ' if s.all_day else f'{time_label} → {time_end}  '}  {s.title}",
-                            key=f"day_item_{s.id}",
-                            use_container_width=True,
-                        )
-                        if clicked_item:
+                        time_label = "종일" if s.all_day else f"{s.start_dt.strftime('%H:%M')} → {s.end_dt.strftime('%H:%M')}"
+                        label = f"{time_label}  {s.title}"
+                        if s.company:
+                            label += f" · {s.company.name}"
+                        if st.button(label, key=f"day_sched_{s.id}", use_container_width=True):
+                            st.session_state["cal_detail_kind"] = "schedule"
                             st.session_state["cal_detail_id"] = s.id
                             st.session_state.pop("cal_add_mode", None)
                             st.rerun()
 
-                # 일정 추가 폼 (＋ 추가 버튼 눌렀을 때)
-                if cal_add_mode:
-                    st.markdown("---")
-                    st.markdown(f"#### ➕ {day_label} 일정 추가")
-                    if _schedule_form(db, companies_all, "day_add_form", default_date=cal_day):
-                        st.session_state.pop("cal_add_mode", None)
-                        st.toast("일정이 저장되었습니다.", icon="✅")
-                        st.rerun()
-                    if st.button("✕ 취소", key="cancel_day_add"):
-                        st.session_state.pop("cal_add_mode", None)
-                        st.rerun()
+                    for m in day_meetings:
+                        company_name = m.company.name if m.company else "-"
+                        summary = m.analysis.one_line_summary if m.analysis else (m.meeting_type or "미팅")
+                        if st.button(f"미팅기록  {company_name} · {summary}", key=f"day_meeting_{m.id}", use_container_width=True):
+                            st.session_state["cal_detail_kind"] = "meeting"
+                            st.session_state["cal_detail_id"] = m.id
+                            st.session_state.pop("cal_add_mode", None)
+                            st.rerun()
 
-            # ══════════════════════════════════════════════
-            # LEVEL 1 : 기본 안내
-            # ══════════════════════════════════════════════
-            else:
-                st.caption("💡 캘린더에서 날짜를 클릭하면 해당 날의 일정을 확인할 수 있습니다.")
+                    if cal_add_mode:
+                        st.divider()
+                        st.markdown("#### 일정 추가")
+                        if _schedule_form(db, companies_all, "day_add_form", default_date=day_dt.date().isoformat()):
+                            st.session_state.pop("cal_add_mode", None)
+                            st.toast("일정이 저장되었습니다.", icon="✅")
+                            st.rerun()
+                        if st.button("취소", key="cancel_day_add", use_container_width=True):
+                            st.session_state.pop("cal_add_mode", None)
+                            st.rerun()
+
+            st.caption("일정은 라벨 색상으로, 미팅 기록은 청록색 이벤트로 표시됩니다.")
 
         # ── 일정 목록 ──
         if calendar_view == "📋 일정 목록":
