@@ -3,15 +3,16 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-  <meta name="theme-color" content="#16a34a" />
+  <meta name="theme-color" content="#ffffff" />
   <link rel="manifest" href="/mobile/static/manifest.webmanifest" />
-  <link rel="stylesheet" href="/mobile/static/styles.css" />
+  <link rel="stylesheet" href="/mobile/static/styles.css?v=20260624-tt1" />
   <title>Sales Calendar</title>
 </head>
 <body>
   <main id="app">
-    <section id="login" class="screen">
+    <section id="login" class="screen login-screen">
       <h1>Sales Calendar</h1>
+      <p>Sales Intelligence 일정과 미팅 기록을 모바일에서 확인합니다.</p>
       <input id="username" placeholder="아이디" value="admin" autocomplete="username" />
       <input id="password" placeholder="비밀번호" type="password" autocomplete="current-password" />
       <button id="loginBtn" class="primary">로그인</button>
@@ -19,58 +20,102 @@
     </section>
 
     <section id="calendar" class="screen hidden">
-      <header class="topbar">
-        <button id="prevMonth" aria-label="이전 달">‹</button>
-        <h1 id="monthTitle"></h1>
-        <button id="nextMonth" aria-label="다음 달">›</button>
+      <header class="month-header">
+        <button id="prevMonth" class="icon-btn" aria-label="이전 달">‹</button>
+        <button id="monthJump" class="month-title" aria-label="오늘로 이동"></button>
+        <button id="nextMonth" class="icon-btn" aria-label="다음 달">›</button>
       </header>
-      <select id="companyFilter"></select>
+
+      <section class="calendar-toolbar">
+        <select id="companyFilter"></select>
+        <button id="todayBtn" class="ghost-btn">오늘</button>
+      </section>
+
       <div class="summary" id="monthSummary"></div>
+
       <div class="weekday-row">
         <span>월</span><span>화</span><span>수</span><span>목</span><span>금</span><span>토</span><span>일</span>
       </div>
       <div id="monthGrid" class="month-grid"></div>
-      <section class="day-panel">
+
+      <section class="day-sheet">
+        <div class="sheet-handle"></div>
         <div class="day-header">
-          <h2 id="dayTitle"></h2>
-          <button id="addBtn" class="round">+</button>
+          <div>
+            <h2 id="dayTitle"></h2>
+            <p id="daySubtitle"></p>
+          </div>
+          <button id="addBtn" class="round" aria-label="일정 추가">+</button>
         </div>
-        <div id="dayItems"></div>
+        <div id="dayItems" class="day-items"></div>
       </section>
+
+      <nav class="bottom-nav" aria-label="하단 메뉴">
+        <button class="active">캘린더</button>
+        <button disabled>목록</button>
+        <button disabled>알림</button>
+        <button disabled>더보기</button>
+      </nav>
     </section>
 
-    <section id="detail" class="screen hidden">
-      <button class="back" data-target="calendar">← 선택일</button>
+    <section id="detail" class="screen hidden detail-screen">
+      <header class="sub-header">
+        <button class="back icon-link" data-target="calendar" aria-label="뒤로">←</button>
+        <button class="icon-link" id="editFromDetail">수정</button>
+      </header>
       <div id="detailContent"></div>
     </section>
 
-    <section id="editor" class="screen hidden">
-      <button class="back" data-target="calendar">← 취소</button>
-      <h2 id="editorTitle">일정 추가</h2>
-      <input id="scheduleTitle" placeholder="제목" />
-      <textarea id="scheduleDescription" placeholder="내용/메모"></textarea>
-      <label><input id="allDay" type="checkbox" checked /> 종일 일정</label>
-      <div class="field-row">
-        <label>시작일<input id="startDate" type="date" /></label>
-        <label>종료일<input id="endDate" type="date" /></label>
+    <section id="editor" class="screen hidden editor-screen">
+      <header class="sub-header">
+        <button class="back icon-link" data-target="calendar" aria-label="닫기">×</button>
+        <button id="saveSchedule" class="save-link">저장</button>
+      </header>
+
+      <input id="scheduleTitle" class="title-input" placeholder="일정 제목" />
+
+      <label class="toggle-row">
+        <span>종일</span>
+        <input id="allDay" type="checkbox" />
+      </label>
+
+      <div class="form-row">
+        <span>시작</span>
+        <input id="startDate" type="date" />
+        <input id="startTime" type="time" value="09:00" />
       </div>
-      <div id="timeFields" class="field-row hidden">
-        <label>시작<input id="startTime" type="time" value="09:00" /></label>
-        <label>종료<input id="endTime" type="time" value="10:00" /></label>
+      <div class="form-row">
+        <span>종료</span>
+        <input id="endDate" type="date" />
+        <input id="endTime" type="time" value="10:00" />
       </div>
+      <div class="form-row static-row">
+        <span>시간대</span>
+        <strong>한국 표준시 (GMT+09:00)</strong>
+      </div>
+
+      <label class="toggle-row">
+        <span>텔레그램 알림</span>
+        <input id="remindEnabled" type="checkbox" />
+      </label>
+      <select id="remindMinutes"></select>
+
       <select id="scheduleCompany"></select>
       <select id="scheduleColor">
-        <option value="#2563EB">파랑</option>
-        <option value="#16A34A">초록</option>
-        <option value="#DC2626">빨강</option>
-        <option value="#D97706">주황</option>
-        <option value="#7C3AED">보라</option>
+        <option value="#3B82F6">파랑</option>
+        <option value="#14B8A6">청록</option>
+        <option value="#22C55E">초록</option>
+        <option value="#F59E0B">노랑</option>
+        <option value="#EF4444">빨강</option>
+        <option value="#A855F7">보라</option>
+        <option value="#111827">검정</option>
       </select>
-      <button id="saveSchedule" class="primary">저장</button>
+      <textarea id="scheduleDescription" placeholder="메모"></textarea>
+
       <button id="deleteSchedule" class="danger hidden">삭제</button>
       <p id="editorError" class="error"></p>
     </section>
   </main>
-  <script src="/mobile/static/app.js"></script>
+  <script src="/mobile/static/app.js?v=20260624-tt1"></script>
 </body>
 </html>

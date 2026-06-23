@@ -15,8 +15,11 @@ except ModuleNotFoundError:  # Python 3.10 server runtime
 from fastapi import Depends, FastAPI, Header, HTTPException
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
+from dotenv import load_dotenv
 from pydantic import BaseModel
 from sqlalchemy.orm import Session, joinedload
+
+load_dotenv()
 
 from database.db import SessionLocal, create_database
 from database.models import Company, MeetingRecord, Schedule
