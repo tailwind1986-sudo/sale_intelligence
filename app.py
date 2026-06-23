@@ -1658,59 +1658,119 @@ def _schedule_form(db, companies_all, form_key, default_date=None,
     """공통 일정 입력 폼. 저장 성공 시 True 반환."""
     now = datetime.now()
     default_start = date.fromisoformat(default_date) if default_date else date.today()
+    default_end = editing.end_dt.date() if editing else default_start
     default_hour = now.hour if now.hour < 23 else 22
 
-    with st.form(form_key, clear_on_submit=True):
-        title = st.text_input("제목 *", value=editing.title if editing else "")
-        description = st.text_area("내용/메모", value=editing.description or "" if editing else "")
+    edit_marker = editing.id if editing else f"new:{default_start.isoformat()}"
+    marker_key = f"{form_key}_marker"
+    if st.session_state.get(marker_key) != edit_marker:
+        for suffix in (
+            "title", "description", "all_day", "start_date", "start_time",
+            "end_date", "end_time", "color_label", "company_id",
+            "company_obj", "remind_enabled", "remind_label", "prev_start_date",
+        ):
+            st.session_state.pop(f"{form_key}_{suffix}", None)
+        st.session_state[marker_key] = edit_marker
 
-        c1, c2 = st.columns(2)
-        with c1:
-            all_day = st.checkbox("종일 일정", value=editing.all_day if editing else False)
-            start_date = st.date_input("시작 날짜", value=editing.start_dt.date() if editing else default_start)
-            if not all_day:
-                start_time = st.time_input("시작 시간",
-                    value=editing.start_dt.time() if editing else now.replace(hour=default_hour, minute=0, second=0).time())
-        with c2:
-            color_names = list(EVENT_COLORS.keys())
-            color_vals  = list(EVENT_COLORS.values())
-            cur_color_idx = color_vals.index(editing.color) if editing and editing.color in color_vals else 0
-            color_label = st.selectbox("색상", color_names, index=cur_color_idx)
-            end_date = st.date_input("종료 날짜", value=editing.end_dt.date() if editing else default_start)
-            if not all_day:
-                end_h = min(default_hour + 1, 23)
-                end_time = st.time_input("종료 시간",
-                    value=editing.end_dt.time() if editing else now.replace(hour=end_h, minute=0, second=0).time())
+    end_h = min(default_hour + 1, 23)
+    defaults = {
+        "title": editing.title if editing else "",
+        "description": (editing.description or "") if editing else "",
+        "all_day": editing.all_day if editing else False,
+        "start_date": editing.start_dt.date() if editing else default_start,
+        "start_time": editing.start_dt.time() if editing else now.replace(hour=default_hour, minute=0, second=0).time(),
+        "end_date": default_end,
+        "end_time": editing.end_dt.time() if editing else now.replace(hour=end_h, minute=0, second=0).time(),
+        "color_label": next((k for k, v in EVENT_COLORS.items() if editing and v == editing.color), "파랑"),
+        "company_id": editing.company_id if editing else None,
+        "remind_enabled": editing.remind_enabled if editing else True,
+        "remind_label": next((k for k, v in REMIND_OPTIONS.items() if editing and v == editing.remind_minutes), "하루 전"),
+    }
+    for suffix, value in defaults.items():
+        st.session_state.setdefault(f"{form_key}_{suffix}", value)
 
-        company_opts = [None] + companies_all
-        cur_co_idx = next((i+1 for i, c in enumerate(companies_all) if editing and c.id == editing.company_id), 0)
-        linked_company = st.selectbox("고객사 연결 (선택)", company_opts,
-            index=cur_co_idx, format_func=lambda x: x.name if x else "없음")
+    title = st.text_input("제목 *", key=f"{form_key}_title")
+    description = st.text_area("내용/메모", key=f"{form_key}_description")
 
-        st.divider()
-        col_r1, col_r2 = st.columns(2)
-        remind_enabled = col_r1.checkbox("텔레그램 알림", value=editing.remind_enabled if editing else True)
-        remind_opts = list(REMIND_OPTIONS.keys())
-        cur_remind = next((k for k, v in REMIND_OPTIONS.items() if editing and v == editing.remind_minutes), "하루 전")
-        remind_label = col_r2.selectbox("알림 시간", remind_opts,
-            index=remind_opts.index(cur_remind), disabled=not remind_enabled)
+    c1, c2 = st.columns(2)
+    with c1:
+        all_day = st.checkbox("종일 일정", key=f"{form_key}_all_day")
+        start_date = st.date_input("시작 날짜", key=f"{form_key}_start_date")
 
-        label = "💾 수정 저장" if editing else "💾 일정 저장"
-        if st.form_submit_button(label, type="primary"):
-            if not title:
-                st.error("제목은 필수입니다.")
-                return False
-            start_dt = datetime.combine(start_date, start_time if not all_day else datetime.min.time())
-            end_dt   = datetime.combine(end_date,   end_time   if not all_day else datetime.min.time())
-            if end_dt < start_dt:
-                st.error("종료 일시는 시작 일시보다 빠를 수 없습니다.")
-                return False
-            _save_schedule(db, title, description or None, start_dt, end_dt, all_day,
-                           EVENT_COLORS[color_label],
-                           linked_company.id if linked_company else None,
-                           remind_enabled, REMIND_OPTIONS[remind_label],
-                           schedule_id=editing.id if editing else None)
-            return True
+        prev_start_key = f"{form_key}_prev_start_date"
+        prev_start = st.session_state.get(prev_start_key)
+        if prev_start and start_date != prev_start and st.session_state.get(f"{form_key}_end_date") == prev_start:
+            st.session_state[f"{form_key}_end_date"] = start_date
+        st.session_state[prev_start_key] = start_date
+
+        if not all_day:
+            start_time = st.time_input("시작 시간", key=f"{form_key}_start_time")
+        else:
+            start_time = datetime.min.time()
+
+    with c2:
+        color_names = list(EVENT_COLORS.keys())
+        color_label = st.selectbox(
+            "색상",
+            color_names,
+            index=color_names.index(st.session_state[f"{form_key}_color_label"]),
+            key=f"{form_key}_color_label",
+        )
+        end_date = st.date_input("종료 날짜", key=f"{form_key}_end_date")
+        if not all_day:
+            end_time = st.time_input("종료 시간", key=f"{form_key}_end_time")
+        else:
+            end_time = datetime.min.time()
+
+    company_opts = [None] + companies_all
+    company_ids = [None] + [c.id for c in companies_all]
+    cur_company_id = st.session_state.get(f"{form_key}_company_id")
+    cur_co_idx = company_ids.index(cur_company_id) if cur_company_id in company_ids else 0
+    linked_company = st.selectbox(
+        "고객사 연결 (선택)",
+        company_opts,
+        index=cur_co_idx,
+        format_func=lambda x: x.name if x else "없음",
+        key=f"{form_key}_company_obj",
+    )
+    st.session_state[f"{form_key}_company_id"] = linked_company.id if linked_company else None
+
+    col_r1, col_r2 = st.columns(2)
+    remind_enabled = col_r1.checkbox("텔레그램 알림", key=f"{form_key}_remind_enabled")
+    remind_opts = list(REMIND_OPTIONS.keys())
+    remind_label = col_r2.selectbox(
+        "알림 시간",
+        remind_opts,
+        index=remind_opts.index(st.session_state[f"{form_key}_remind_label"]),
+        disabled=not remind_enabled,
+        key=f"{form_key}_remind_label",
+    )
+
+    label = "수정 저장" if editing else "일정 저장"
+    if st.button(label, type="primary", use_container_width=True, key=f"{form_key}_submit"):
+        if not title:
+            st.error("제목은 필수입니다.")
+            return False
+        start_dt = datetime.combine(start_date, start_time)
+        end_dt = datetime.combine(end_date, end_time)
+        if end_dt < start_dt:
+            st.error("종료 일시는 시작 일시보다 빠를 수 없습니다.")
+            return False
+        _save_schedule(
+            db,
+            title,
+            description or None,
+            start_dt,
+            end_dt,
+            all_day,
+            EVENT_COLORS[color_label],
+            linked_company.id if linked_company else None,
+            remind_enabled,
+            REMIND_OPTIONS[remind_label],
+            schedule_id=editing.id if editing else None,
+        )
+        st.session_state[marker_key] = None
+        return True
     return False
 
 
@@ -1719,22 +1779,10 @@ def page_calendar():
     from services.telegram_service import check_and_send_reminders, send_message, _get_token, _get_chat_id
     from database.models import Schedule
 
-    st.title("🗓️ 일정 관리")
+    st.title("일정 관리")
 
     db = get_db()
     try:
-        # ── 알림 자동 체크 (60초에 한 번만 실행) ──
-        @st.cache_data(ttl=60, show_spinner=False)
-        def _check_reminders_cached(_tick):
-            return check_and_send_reminders(db)
-
-        if _get_token() and _get_chat_id():
-            import time as _time
-            tick = int(_time.time() // 60)
-            sent = _check_reminders_cached(tick)
-            if sent:
-                st.toast(f"텔레그램 알림 {sent}건 전송됨", icon="📨")
-
         companies_all = db.query(Company).order_by(Company.name).all()
 
         calendar_view = st.radio(
@@ -1748,14 +1796,15 @@ def page_calendar():
         if calendar_view == "📅 캘린더":
             # ── 년/월 드롭다운 네비게이터 ──
             now = datetime.now()
-            nav_col1, nav_col2, nav_col3, nav_col4 = st.columns([1, 1, 2, 2])
+            nav_col1, nav_col2 = st.columns(2)
             nav_year  = nav_col1.selectbox("년도", list(range(now.year - 2, now.year + 5)),
                                            index=2, key="cal_nav_year", label_visibility="collapsed")
             nav_month = nav_col2.selectbox("월", list(range(1, 13)),
                                            index=now.month - 1, key="cal_nav_month", label_visibility="collapsed",
                                            format_func=lambda m: f"{m}월")
-            keyword = nav_col3.text_input("일정 검색", placeholder="제목, 고객사, 미팅 내용", label_visibility="collapsed")
-            filter_company = nav_col4.selectbox(
+            st.markdown(f"### {nav_year}년 {nav_month}월")
+            keyword = st.text_input("일정 검색", placeholder="제목, 고객사, 미팅 내용", label_visibility="collapsed")
+            filter_company = st.selectbox(
                 "고객사 필터",
                 [None] + companies_all,
                 format_func=lambda x: x.name if x else "전체 고객사",
@@ -1763,7 +1812,7 @@ def page_calendar():
                 key="cal_company_filter",
             )
 
-            type_col1, type_col2, type_col3, type_col4 = st.columns([1, 1, 1, 3])
+            type_col1, type_col2, type_col3 = st.columns(3)
             show_schedules = type_col1.checkbox("일정", value=True, key="cal_show_schedules")
             show_meetings = type_col2.checkbox("미팅기록", value=True, key="cal_show_meetings")
             if type_col3.button("오늘", use_container_width=True):
@@ -1820,11 +1869,9 @@ def page_calendar():
                     or keyword_norm in ((m.analysis.one_line_summary if m.analysis else "") or "").lower()
                 ]
 
-            kpi1, kpi2, kpi3, kpi4 = st.columns(4)
-            kpi1.metric("이번 화면 일정", len(schedules))
-            kpi2.metric("미팅기록", len(meetings))
-            kpi3.metric("오늘 일정", sum(1 for s in schedules if s.start_dt.date() <= date.today() <= s.end_dt.date()))
-            kpi4.metric("이번 달 미팅", sum(1 for m in meetings if m.meeting_date and m.meeting_date.month == nav_month and m.meeting_date.year == nav_year))
+            today_count = sum(1 for s in schedules if s.start_dt.date() <= date.today() <= s.end_dt.date())
+            month_meetings = sum(1 for m in meetings if m.meeting_date and m.meeting_date.month == nav_month and m.meeting_date.year == nav_year)
+            st.caption(f"일정 {len(schedules)}건 · 오늘 {today_count}건 · 미팅기록 {len(meetings)}건 · 이번 달 미팅 {month_meetings}건")
 
             events = []
             for s in schedules:
@@ -1862,27 +1909,39 @@ def page_calendar():
             calendar_options = {
                 "initialView": "dayGridMonth",
                 "initialDate": initial_date,
-                "headerToolbar": {
-                    "left": "prev,next today",
-                    "center": "title",
-                    "right": "dayGridMonth,timeGridWeek,timeGridDay,listWeek",
-                },
+                "headerToolbar": False,
                 "locale": "ko",
-                "height": 620,
+                "height": "auto",
+                "contentHeight": "auto",
+                "aspectRatio": 0.85,
                 "selectable": True,
                 "selectMirror": True,
                 "editable": False,
                 "nowIndicator": True,
-                "dayMaxEvents": 3,
+                "dayMaxEvents": 4,
+                "fixedWeekCount": False,
+                "showNonCurrentDates": True,
                 "businessHours": {"daysOfWeek": [1,2,3,4,5]},
             }
             custom_css = """
-                .fc-event { cursor: pointer; border-radius: 4px; font-size: 0.82rem; padding: 1px 3px; }
+                .fc { font-size: 0.88rem; }
+                .fc-scrollgrid { border-color: #E5E7EB !important; }
+                .fc-theme-standard td, .fc-theme-standard th { border-color: #E5E7EB !important; }
+                .fc-col-header-cell { background: #F8FAFC; padding: 5px 0; }
+                .fc-daygrid-day-number { color: #111827; font-weight: 700; padding: 5px 6px 2px !important; }
+                .fc-day-other .fc-daygrid-day-number { color: #9CA3AF; }
+                .fc-event { cursor: pointer; border-radius: 4px; font-size: 0.78rem; padding: 1px 3px; border: none !important; margin-top: 1px; }
                 .fc-event-title { font-weight: 600; }
-                .fc-toolbar-title { font-size: 1.2rem !important; }
-                .fc-today { background: #EFF6FF !important; }
+                .fc-today { background: #FEF3C7 !important; }
                 .fc-daygrid-day:hover { background: #F1F5F9; cursor: pointer; }
-                .fc-now-indicator { border-color: #DC2626; }
+                .fc-daygrid-day-frame { min-height: 86px; }
+                @media (max-width: 640px) {
+                    .fc { font-size: 0.75rem; }
+                    .fc-daygrid-day-frame { min-height: 92px; }
+                    .fc-daygrid-day-number { font-size: 0.9rem; padding: 4px 4px 0 !important; }
+                    .fc-event { font-size: 0.68rem; line-height: 1.15; padding: 2px 3px; }
+                    .fc-daygrid-more-link { font-size: 0.68rem; }
+                }
             """
             cal_col, side_col = st.columns([2.2, 1])
             with cal_col:
@@ -2153,6 +2212,13 @@ def page_calendar():
                         st.toast("테스트 메시지 전송 성공!", icon="📨")
                     else:
                         st.error("전송 실패. Token 또는 Chat ID를 확인해주세요.")
+
+            if st.button("🔔 지금 알림 체크", use_container_width=True):
+                sent = check_and_send_reminders(db)
+                if sent:
+                    st.toast(f"텔레그램 알림 {sent}건 전송됨", icon="📨")
+                else:
+                    st.info("전송할 알림이 없습니다.")
 
     finally:
         db.close()
