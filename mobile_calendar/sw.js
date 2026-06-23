@@ -1,5 +1,5 @@
 self.addEventListener("install", event => {
-  event.waitUntil(caches.open("sales-mobile-v1").then(cache => cache.addAll(["/", "/static/styles.css", "/static/app.js"])));
+  event.waitUntil(caches.open("sales-mobile-v1").then(cache => cache.addAll(["/mobile/", "/mobile/static/styles.css", "/mobile/static/app.js"])));
 });
 
 self.addEventListener("fetch", event => {
