@@ -2175,7 +2175,10 @@ def page_calendar():
     st.title("일정 관리")
     mobile_token = _mobile_auth_token()
     mobile_url = f"/mobile/?auth={mobile_token}" if mobile_token else "/mobile/"
-    st.link_button("모바일 전용 일정관리 열기", mobile_url, use_container_width=True)
+    st.caption("PC와 모바일에서 같은 일정관리 화면을 사용합니다.")
+    components.iframe(mobile_url, height=920, scrolling=True)
+    st.link_button("새 창에서 일정관리 열기", mobile_url, use_container_width=True)
+    return
 
     db = get_db()
     try:
