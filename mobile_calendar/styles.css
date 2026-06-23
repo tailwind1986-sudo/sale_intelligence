@@ -198,7 +198,7 @@ textarea {
   display: block;
   height: clamp(68px, calc((100dvh - 320px) / 6), 96px);
   min-height: 0;
-  padding: 7px 2px 3px;
+  padding: 6px 2px 3px;
   appearance: none;
   -webkit-appearance: none;
   background: #fff;
@@ -228,30 +228,32 @@ textarea {
   display: block;
   font-size: 0.83rem;
   font-weight: 900;
-  line-height: 23px;
+  line-height: 20px;
+  height: 22px;
+  margin-bottom: 14px;
 }
 
 .week-bars {
   position: absolute;
   left: 0;
   right: 0;
-  top: 34px;
+  top: 43px;
   z-index: 2;
-  grid-auto-rows: 20px;
-  row-gap: 3px;
+  grid-auto-rows: 18px;
+  row-gap: 2px;
   pointer-events: none;
 }
 
 .week-event-bar {
   min-width: 0;
-  min-height: 20px;
+  min-height: 18px;
   margin: 0 2px;
   padding: 0 5px;
   border-radius: 4px;
   color: #fff;
   font-size: 0.68rem;
   font-weight: 800;
-  line-height: 20px;
+  line-height: 18px;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -548,8 +550,10 @@ textarea {
   }
   .day-cell {
     height: clamp(64px, calc((100dvh - 310px) / 6), 88px);
-    padding-top: 6px;
+    padding-top: 5px;
   }
+  .week-bars { top: 40px; grid-auto-rows: 17px; }
+  .week-event-bar { min-height: 17px; line-height: 17px; }
   .week-event-bar { font-size: 0.64rem; padding: 0 4px; }
   .item { grid-template-columns: 62px 4px 1fr auto; }
   .form-row { grid-template-columns: 58px 1fr 92px; }

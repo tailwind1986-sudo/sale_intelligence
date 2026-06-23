@@ -242,13 +242,40 @@ body,
 .metric-card {
     background: #FFFFFF;
     border-radius: 12px;
-    padding: 1.1rem 1.4rem;
+    padding: 0.9rem 1rem;
     box-shadow: 0 1px 6px rgba(0,0,0,0.07);
     border-left: 4px solid #2563EB;
     margin-bottom: 0.5rem;
 }
-.metric-card h3 { margin: 0 0 4px; font-size: 1.9rem; font-weight: 700; }
-.metric-card p  { margin: 0; color: #64748B; font-size: 0.82rem; font-weight: 500; }
+.metric-grid {
+    display: grid;
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+    gap: 0.55rem;
+}
+.metric-card h3 { margin: 0 0 4px; font-size: 1.55rem; font-weight: 800; line-height: 1.1; }
+.metric-card p  { margin: 0; color: #64748B; font-size: 0.78rem; font-weight: 700; line-height: 1.25; word-break: keep-all; }
+
+@media (max-width: 640px) {
+    .metric-grid {
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 0.45rem;
+    }
+    .metric-card {
+        min-height: 74px;
+        padding: 0.7rem 0.55rem;
+        border-left-width: 3px;
+        border-radius: 10px;
+    }
+    .metric-card h3 {
+        font-size: 1.45rem;
+        text-align: center;
+    }
+    .metric-card p {
+        font-size: 0.72rem;
+        text-align: center;
+        white-space: normal;
+    }
+}
 
 /* ══ 섹션 타이틀 ══ */
 .section-title {
@@ -360,7 +387,6 @@ def page_dashboard():
         ).scalar() or 0
 
         # 지표 카드
-        cols = st.columns(6)
         metrics = [
             ("고객사 수", total_companies, "#1E40AF"),
             ("총 미팅 수", total_meetings,  "#0F766E"),
@@ -369,19 +395,17 @@ def page_dashboard():
             ("약속 불이행", unfulfilled,    "#EA580C"),
             ("기한 초과", overdue_actions,  "#B45309"),
         ]
-        for col, (label, val, color) in zip(cols, metrics):
-            with col:
-                st.markdown(
-                    f'<div class="metric-card" style="border-left-color:{color}">'
-                    f'<h3 style="color:{color}">{val}</h3><p>{label}</p></div>',
-                    unsafe_allow_html=True,
-                )
+        metric_html = "".join(
+            f'<div class="metric-card" style="border-left-color:{color}">'
+            f'<h3 style="color:{color}">{val}</h3><p>{label}</p></div>'
+            for label, val, color in metrics
+        )
+        st.markdown(f'<div class="metric-grid">{metric_html}</div>', unsafe_allow_html=True)
 
         st.divider()
-        col_l, col_r = st.columns(2)
 
         # 최근 미팅
-        with col_l:
+        if True:
             st.markdown('<div class="section-title">📅 최근 미팅</div>', unsafe_allow_html=True)
             recent = (
                 db.query(MeetingRecord)
@@ -405,7 +429,7 @@ def page_dashboard():
                 st.info("아직 미팅 기록이 없습니다.")
 
         # 기한 임박 액션아이템
-        with col_r:
+        if True:
             st.markdown('<div class="section-title">⚡ 기한 임박 액션아이템 (7일 이내)</div>', unsafe_allow_html=True)
             deadline = date.today() + timedelta(days=7)
             urgent = (
@@ -432,8 +456,7 @@ def page_dashboard():
             else:
                 st.success("7일 이내 마감 예정 액션아이템이 없습니다.")
 
-        # 영업단계별 현황
-        st.markdown('<div class="section-title">📊 영업단계별 고객사 현황</div>', unsafe_allow_html=True)
+        return
         stage_data = (
             db.query(Company.sales_stage, func.count(Company.id).label("count"))
             .group_by(Company.sales_stage)
