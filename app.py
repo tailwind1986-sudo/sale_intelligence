@@ -1645,6 +1645,16 @@ def page_calendar():
 
         # ── 캘린더 뷰 ──
         with tab_cal:
+            # ── 년/월 드롭다운 네비게이터 ──
+            now = datetime.now()
+            nav_col1, nav_col2, nav_col3 = st.columns([1, 1, 4])
+            nav_year  = nav_col1.selectbox("년도", list(range(now.year - 2, now.year + 5)),
+                                           index=2, key="cal_nav_year", label_visibility="collapsed")
+            nav_month = nav_col2.selectbox("월", list(range(1, 13)),
+                                           index=now.month - 1, key="cal_nav_month", label_visibility="collapsed",
+                                           format_func=lambda m: f"{m}월")
+            initial_date = f"{nav_year}-{nav_month:02d}-01"
+
             schedules = db.query(Schedule).options(
                 joinedload(Schedule.company)
             ).all()
@@ -1660,7 +1670,8 @@ def page_calendar():
                 }
                 if s.all_day:
                     ev["start"] = s.start_dt.strftime("%Y-%m-%d")
-                    ev["end"] = s.end_dt.strftime("%Y-%m-%d")
+                    # FullCalendar all-day end는 exclusive → +1일
+                    ev["end"] = (s.end_dt + timedelta(days=1)).strftime("%Y-%m-%d")
                 else:
                     ev["start"] = s.start_dt.strftime("%Y-%m-%dT%H:%M:%S")
                     ev["end"]   = s.end_dt.strftime("%Y-%m-%dT%H:%M:%S")
@@ -1670,13 +1681,14 @@ def page_calendar():
 
             calendar_options = {
                 "initialView": "dayGridMonth",
+                "initialDate": initial_date,
                 "headerToolbar": {
                     "left": "prev,next today",
                     "center": "title",
                     "right": "dayGridMonth,timeGridWeek,timeGridDay,listWeek",
                 },
                 "locale": "ko",
-                "height": 650,
+                "height": 620,
                 "selectable": True,
                 "selectMirror": True,
                 "editable": False,
