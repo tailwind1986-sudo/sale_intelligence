@@ -19,10 +19,23 @@ const state = {
   schedules: [],
   meetings: [],
   editing: null,
+  endDateTouched: false,
+  endTimeTouched: false,
 };
 
 const BASE = location.pathname.startsWith("/mobile") ? "/mobile" : "";
 const $ = id => document.getElementById(id);
+
+function consumeUrlAuth() {
+  const url = new URL(location.href);
+  const token = url.searchParams.get("auth");
+  if (!token) return false;
+  state.token = token;
+  localStorage.setItem("sales_mobile_token", token);
+  url.searchParams.delete("auth");
+  history.replaceState({}, "", url.pathname + url.search + url.hash);
+  return true;
+}
 
 function isoDate(d) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
@@ -33,16 +46,16 @@ function parseLocalDate(value) {
   return new Date(y, m - 1, d);
 }
 
+function addDays(value, days) {
+  const d = parseLocalDate(value);
+  d.setDate(d.getDate() + days);
+  return isoDate(d);
+}
+
 function formatKoreanDate(value, withWeekday = false) {
   const d = parseLocalDate(value);
   const weekday = "일월화수목금토"[d.getDay()];
   return withWeekday ? `${d.getMonth() + 1}월 ${d.getDate()}일 ${weekday}요일` : `${d.getMonth() + 1}월 ${d.getDate()}일`;
-}
-
-function timeLabel(item) {
-  if (item.kind === "meeting") return "미팅\n기록";
-  if (item.all_day) return "종일";
-  return `${toAmpm(item.start_time)}\n${toAmpm(item.end_time)}`;
 }
 
 function toAmpm(value) {
@@ -51,6 +64,23 @@ function toAmpm(value) {
   const part = h < 12 ? "오전" : "오후";
   const hour = h % 12 || 12;
   return `${part} ${hour}:${String(m).padStart(2, "0")}`;
+}
+
+function addOneHour(timeValue) {
+  const [h, m] = String(timeValue || "09:00").split(":").map(Number);
+  const total = h * 60 + m + 60;
+  const nextDay = total >= 24 * 60;
+  const minutes = total % (24 * 60);
+  return {
+    time: `${String(Math.floor(minutes / 60)).padStart(2, "0")}:${String(minutes % 60).padStart(2, "0")}`,
+    nextDay,
+  };
+}
+
+function timeLabel(item) {
+  if (item.kind === "meeting") return "미팅\n기록";
+  if (item.all_day) return "종일";
+  return `${toAmpm(item.start_time)}\n${toAmpm(item.end_time)}`;
 }
 
 function show(screenId) {
@@ -75,7 +105,8 @@ async function api(path, options = {}) {
   return res.json();
 }
 
-async function login() {
+async function login(event) {
+  if (event) event.preventDefault();
   $("loginError").textContent = "";
   try {
     const data = await api("/api/login", {
@@ -137,7 +168,7 @@ function renderMonth() {
     cell.className = "day-cell";
     if (iso === state.selectedDate) cell.classList.add("selected");
     if (iso === isoDate(new Date())) cell.classList.add("today");
-    cell.innerHTML = `<div class="day-num">${day}</div>${renderMonthChips(items)}`;
+    cell.innerHTML = `<div class="day-num">${day}</div>${renderMonthChips(items, iso)}`;
     cell.onclick = () => {
       state.selectedDate = iso;
       renderMonth();
@@ -153,14 +184,32 @@ function emptyCell() {
   return cell;
 }
 
-function renderMonthChips(items) {
+function renderMonthChips(items, iso) {
   const visible = items.slice(0, 3).map(item => {
     const color = item.kind === "meeting" ? "#14B8A6" : item.color || "#3B82F6";
-    const cls = item.kind === "meeting" ? "event-chip meeting-chip" : "event-chip";
-    return `<span class="${cls}" style="background:${escapeAttr(color)}">${escapeHtml(item.title)}</span>`;
+    const segment = chipSegment(item, iso);
+    const text = segment.showTitle ? escapeHtml(item.title) : "&nbsp;";
+    const cls = ["event-chip", item.kind === "meeting" ? "meeting-chip" : "", segment.className].filter(Boolean).join(" ");
+    return `<span class="${cls}" style="background:${escapeAttr(color)}">${text}</span>`;
   }).join("");
   const more = items.length > 3 ? `<span class="more-chip">+${items.length - 3}</span>` : "";
   return visible + more;
+}
+
+function chipSegment(item, iso) {
+  if (item.kind !== "schedule" || item.start_date === item.end_date) {
+    return { className: "single", showTitle: true };
+  }
+  const day = parseLocalDate(iso).getDay();
+  const weekStart = day === 1;
+  const weekEnd = day === 0;
+  const isStart = iso === item.start_date || weekStart;
+  const isEnd = iso === item.end_date || weekEnd;
+  let className = "mid";
+  if (isStart && isEnd) className = "single";
+  else if (isStart) className = "start";
+  else if (isEnd) className = "end";
+  return { className, showTitle: isStart };
 }
 
 function itemsForDay(iso) {
@@ -261,6 +310,8 @@ function openScheduleDetail(s) {
 
 function openEditor(schedule = null) {
   state.editing = schedule;
+  state.endDateTouched = Boolean(schedule);
+  state.endTimeTouched = Boolean(schedule);
   $("scheduleTitle").value = schedule?.title || "";
   $("scheduleDescription").value = schedule?.description || "";
   $("allDay").checked = schedule ? schedule.all_day : false;
@@ -273,6 +324,10 @@ function openEditor(schedule = null) {
   $("remindEnabled").checked = schedule ? Boolean(schedule.remind_enabled) : true;
   $("remindMinutes").value = String(schedule?.remind_minutes || 1440);
   $("deleteSchedule").classList.toggle("hidden", !schedule);
+  if (!schedule) {
+    syncEndDateToStart(true);
+    syncEndTimeToStart(true);
+  }
   toggleTimeFields();
   show("editor");
 }
@@ -283,10 +338,20 @@ function toggleTimeFields() {
   $("endTime").classList.toggle("hidden", allDay);
 }
 
-function syncEndDateToStart() {
+function syncEndDateToStart(force = false) {
   const start = $("startDate").value;
-  const end = $("endDate").value;
-  if (!end || end < start) $("endDate").value = start;
+  if (force || !state.endDateTouched || !$("endDate").value || $("endDate").value < start) {
+    $("endDate").value = start;
+  }
+}
+
+function syncEndTimeToStart(force = false) {
+  if ($("allDay").checked) return;
+  if (!force && state.endTimeTouched) return;
+  const next = addOneHour($("startTime").value);
+  $("endTime").value = next.time;
+  if (next.nextDay && !state.endDateTouched) $("endDate").value = addDays($("startDate").value, 1);
+  if (!next.nextDay && !state.endDateTouched) $("endDate").value = $("startDate").value;
 }
 
 async function saveSchedule() {
@@ -351,7 +416,7 @@ function escapeAttr(value) {
   return String(value ?? "").replace(/["'<>]/g, "");
 }
 
-$("loginBtn").onclick = login;
+$("loginForm").addEventListener("submit", login);
 $("prevMonth").onclick = async () => {
   if (state.month === 1) { state.year--; state.month = 12; } else state.month--;
   state.selectedDate = `${state.year}-${String(state.month).padStart(2, "0")}-01`;
@@ -366,19 +431,19 @@ $("monthJump").onclick = goToday;
 $("todayBtn").onclick = goToday;
 $("companyFilter").onchange = async e => { state.companyId = e.target.value; await loadMonth(); };
 $("addBtn").onclick = () => openEditor();
-$("allDay").onchange = toggleTimeFields;
-$("startDate").onchange = () => {
-  if (!state.editing || $("endDate").value === state.editing.start_date || $("endDate").value < $("startDate").value) {
-    $("endDate").value = $("startDate").value;
-  }
-};
+$("allDay").onchange = () => { toggleTimeFields(); syncEndTimeToStart(true); };
+$("startDate").onchange = () => { syncEndDateToStart(true); syncEndTimeToStart(true); };
+$("endDate").onchange = () => { state.endDateTouched = true; };
+$("startTime").onchange = () => syncEndTimeToStart(true);
+$("endTime").onchange = () => { state.endTimeTouched = true; };
 $("saveSchedule").onclick = saveSchedule;
 $("deleteSchedule").onclick = deleteSchedule;
 for (const btn of document.querySelectorAll(".back")) btn.onclick = () => show(btn.dataset.target);
 
 if ("serviceWorker" in navigator) {
-  navigator.serviceWorker.register(`${BASE}/static/sw.js?v=20260624-tt1`).then(reg => reg.update()).catch(() => {});
+  navigator.serviceWorker.register(`${BASE}/static/sw.js?v=20260624-tt2`).then(reg => reg.update()).catch(() => {});
 }
 
+consumeUrlAuth();
 if (state.token) bootstrap().catch(() => show("login"));
 else show("login");

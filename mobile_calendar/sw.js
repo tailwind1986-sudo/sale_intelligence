@@ -1,8 +1,8 @@
-const CACHE_NAME = "sales-mobile-v3";
+const CACHE_NAME = "sales-mobile-v4";
 const ASSETS = [
   "/mobile/",
-  "/mobile/static/styles.css?v=20260624-tt1",
-  "/mobile/static/app.js?v=20260624-tt1",
+  "/mobile/static/styles.css?v=20260624-tt2",
+  "/mobile/static/app.js?v=20260624-tt2",
 ];
 
 self.addEventListener("install", event => {

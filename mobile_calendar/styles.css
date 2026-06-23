@@ -52,6 +52,12 @@ button {
   background: linear-gradient(180deg, #ffffff 0%, #f0fbff 100%);
 }
 
+.login-screen form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
 .login-screen h1 {
   margin: 0;
   font-size: 2rem;
@@ -192,10 +198,10 @@ textarea {
 
 .event-chip {
   display: block;
-  width: 100%;
+  width: calc(100% + 4px);
   margin-top: 2px;
   padding: 1px 3px;
-  border-radius: 3px;
+  border-radius: 4px;
   color: #fff;
   font-size: 0.64rem;
   font-weight: 800;
@@ -203,6 +209,27 @@ textarea {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.event-chip.start {
+  margin-right: -2px;
+  border-radius: 4px 0 0 4px;
+}
+
+.event-chip.mid {
+  width: calc(100% + 6px);
+  margin-left: -3px;
+  margin-right: -3px;
+  border-radius: 0;
+}
+
+.event-chip.end {
+  margin-left: -2px;
+  border-radius: 0 4px 4px 0;
+}
+
+.event-chip.single {
+  border-radius: 4px;
 }
 
 .meeting-chip { opacity: 0.88; }

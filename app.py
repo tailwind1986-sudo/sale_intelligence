@@ -58,6 +58,17 @@ def _hash_password(password: str) -> str:
     return hashlib.sha256(password.encode("utf-8")).hexdigest()
 
 
+def _mobile_auth_token() -> str:
+    password_hash = _get_secret("APP_PASSWORD_HASH")
+    plain_password = _get_secret("APP_PASSWORD")
+    username = _get_secret("APP_USERNAME", "admin")
+    if not password_hash and plain_password:
+        password_hash = _hash_password(plain_password)
+    if not password_hash:
+        return ""
+    return hmac.new(password_hash.strip().lower().encode("utf-8"), username.encode("utf-8"), hashlib.sha256).hexdigest()
+
+
 def _password_matches(password: str) -> bool:
     password_hash = _get_secret("APP_PASSWORD_HASH")
     if password_hash:
@@ -2096,7 +2107,9 @@ def page_calendar():
     from database.models import Schedule
 
     st.title("일정 관리")
-    st.link_button("모바일 전용 일정관리 열기", "/mobile/", use_container_width=True)
+    mobile_token = _mobile_auth_token()
+    mobile_url = f"/mobile/?auth={mobile_token}" if mobile_token else "/mobile/"
+    st.link_button("모바일 전용 일정관리 열기", mobile_url, use_container_width=True)
 
     db = get_db()
     try:
