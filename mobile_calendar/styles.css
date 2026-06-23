@@ -41,7 +41,7 @@ button {
 
 .screen {
   min-height: 100vh;
-  padding: max(16px, env(safe-area-inset-top)) 14px max(82px, env(safe-area-inset-bottom));
+  padding: max(56px, calc(env(safe-area-inset-top) + 16px)) 14px max(82px, env(safe-area-inset-bottom));
 }
 
 .login-screen {
@@ -176,7 +176,7 @@ textarea {
 
 .day-cell {
   position: relative;
-  min-height: 82px;
+  min-height: 104px;
   padding: 5px 2px 3px;
   background: #fff;
   border-right: 1px solid #f0f1f4;
@@ -212,21 +212,21 @@ textarea {
   right: 0;
   top: 34px;
   z-index: 2;
-  grid-auto-rows: 18px;
-  row-gap: 2px;
+  grid-auto-rows: 20px;
+  row-gap: 3px;
   pointer-events: none;
 }
 
 .week-event-bar {
   min-width: 0;
-  min-height: 18px;
+  min-height: 20px;
   margin: 0 2px;
   padding: 0 5px;
   border-radius: 4px;
   color: #fff;
   font-size: 0.68rem;
   font-weight: 800;
-  line-height: 18px;
+  line-height: 20px;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -517,7 +517,7 @@ textarea {
 
 @media (max-width: 390px) {
   .screen { padding-left: 10px; padding-right: 10px; }
-  .day-cell { min-height: 74px; }
+  .day-cell { min-height: 96px; }
   .week-event-bar { font-size: 0.62rem; }
   .item { grid-template-columns: 62px 4px 1fr auto; }
   .form-row { grid-template-columns: 58px 1fr 92px; }

@@ -15,6 +15,7 @@ from zoneinfo import ZoneInfo
 
 import pandas as pd
 import streamlit as st
+import streamlit.components.v1 as components
 from dotenv import load_dotenv
 from sqlalchemy import desc, func, or_
 from sqlalchemy.orm import joinedload
@@ -97,6 +98,35 @@ def require_login() -> None:
         username = st.text_input("아이디", value=_get_secret("APP_USERNAME", "admin"))
         password = st.text_input("비밀번호", type="password")
         submitted = st.form_submit_button("로그인", type="primary")
+
+    components.html(
+        """
+        <script>
+        const applyPasswordHints = () => {
+          const doc = window.parent.document;
+          const password = doc.querySelector('input[type="password"]');
+          const inputs = Array.from(doc.querySelectorAll('input'));
+          const username = inputs.find(input => input !== password && input.value === 'admin') || inputs.find(input => input !== password);
+          if (username) {
+            username.setAttribute('name', 'username');
+            username.setAttribute('autocomplete', 'username');
+            username.setAttribute('autocapitalize', 'none');
+            username.setAttribute('spellcheck', 'false');
+          }
+          if (password) {
+            password.setAttribute('name', 'password');
+            password.setAttribute('autocomplete', 'current-password');
+            password.setAttribute('autocapitalize', 'none');
+            password.setAttribute('spellcheck', 'false');
+          }
+        };
+        applyPasswordHints();
+        setTimeout(applyPasswordHints, 500);
+        </script>
+        """,
+        height=0,
+        width=0,
+    )
 
     if submitted:
         expected_username = _get_secret("APP_USERNAME", "admin")
