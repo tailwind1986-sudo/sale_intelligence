@@ -379,7 +379,7 @@ def page_company_management():
                         if st.button("확인 삭제", key=f"confirm2_{c.id}"):
                             db.delete(c)
                             db.commit()
-                            st.success("삭제되었습니다.")
+                            st.toast("삭제되었습니다.", icon="🗑️")
                             st.rerun()
 
         # ── 등록/수정 ──
@@ -437,7 +437,7 @@ def page_company_management():
                             )
                             db.add(c)
                         db.commit()
-                        st.success("저장되었습니다.")
+                        st.toast("저장되었습니다.", icon="✅")
                         st.session_state.pop("edit_company_id", None)
                         st.rerun()
 
@@ -506,7 +506,7 @@ def page_company_management():
                                 is_primary=ct_primary, notes=ct_notes or None,
                             ))
                             db.commit()
-                            st.success("담당자가 추가되었습니다.")
+                            st.toast("담당자가 추가되었습니다.", icon="✅")
                             st.rerun()
 
         # ── 고객 취향·중요 정보 ──
@@ -555,7 +555,7 @@ def page_company_management():
                         if item:
                             db.delete(item)
                             db.commit()
-                            st.success("삭제되었습니다.")
+                            st.toast("삭제되었습니다.", icon="🗑️")
                             st.rerun()
                         else:
                             st.error("해당 항목을 찾을 수 없습니다.")
@@ -592,7 +592,7 @@ def page_company_management():
                                 notes=info_notes or None,
                             ))
                             db.commit()
-                            st.success("정보가 추가되었습니다.")
+                            st.toast("정보가 추가되었습니다.", icon="✅")
                             st.rerun()
     finally:
         db.close()
@@ -686,17 +686,17 @@ def page_meeting_upload():
                 st.session_state.pop("up_raw_text", None)
                 st.session_state.pop("up_file_name", None)
 
-                st.success(f"✅ 미팅 기록 저장 완료! (ID: {record.id})")
+                st.toast(f"미팅 기록 저장 완료! (ID: {record.id})", icon="✅")
 
                 if run_ai:
                     with st.spinner("🤖 AI 분석 중… (30초~1분 소요)"):
                         try:
                             result = analyze_meeting_transcript(raw_text)
                             _save_analysis(db, record, result)
-                            st.success("🎉 AI 분석 완료! '미팅 요약 결과' 메뉴에서 확인하세요.")
+                            st.toast("AI 분석 완료! '미팅 요약 결과' 메뉴에서 확인하세요.", icon="🎉")
                             st.session_state["last_meeting_id"] = record.id
                         except Exception as e:
-                            st.error(f"AI 분석 오류: {e}")
+                            st.toast(f"AI 분석 오류: {e}", icon="❌")
                             st.info("'미팅 요약 결과' 메뉴에서 수동으로 분석을 실행할 수 있습니다.")
                             st.session_state["last_meeting_id"] = record.id
                 else:
@@ -805,7 +805,7 @@ def page_meeting_results():
                     db.delete(meeting_to_del)
                     db.commit()
                 st.session_state.pop("last_meeting_id", None)
-                st.success("삭제되었습니다.")
+                st.toast("삭제되었습니다.", icon="🗑️")
                 st.rerun()
 
         # 수동 분석 트리거
@@ -816,10 +816,10 @@ def page_meeting_results():
                     try:
                         result = analyze_meeting_transcript(sel_meeting.raw_text)
                         _save_analysis(db, sel_meeting, result)
-                        st.success("분석 완료!")
+                        st.toast("분석 완료!", icon="🎉")
                         st.rerun()
                     except Exception as e:
-                        st.error(f"오류: {e}")
+                        st.toast(f"오류: {e}", icon="❌")
             return
 
         a = sel_meeting.analysis
@@ -919,7 +919,7 @@ def page_meeting_results():
                             content=ai_content, assignee=ai_assignee or None, due_date=ai_due,
                         ))
                         db.commit()
-                        st.success("추가되었습니다.")
+                        st.toast("추가되었습니다.", icon="✅")
                         st.rerun()
 
         with tab3:
@@ -1173,7 +1173,7 @@ def page_action_items():
                                 assignee=assignee or None, due_date=due_date, notes=notes or None,
                             ))
                             db.commit()
-                            st.success("추가되었습니다.")
+                            st.toast("추가되었습니다.", icon="✅")
                             st.rerun()
 
         # ── 약속사항 ──
@@ -1260,7 +1260,7 @@ def page_action_items():
                                 notes=pm_notes or None,
                             ))
                             db.commit()
-                            st.success("추가되었습니다.")
+                            st.toast("추가되었습니다.", icon="✅")
                             st.rerun()
 
     finally:
@@ -1406,7 +1406,7 @@ def page_risk_analysis():
             sel.risk_level = new_risk
             sel.updated_at = datetime.now()
             db.commit()
-            st.success("저장되었습니다.")
+            st.toast("저장되었습니다.", icon="✅")
             st.rerun()
 
     finally:
