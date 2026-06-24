@@ -1,4 +1,4 @@
-const BASE = location.pathname.startsWith("/mobile") ? "/mobile" : "";
+const NAV_BASE = location.pathname.startsWith("/mobile") ? "/mobile" : "";
 const token = localStorage.getItem("sales_mobile_token") || "";
 
 const ACTION_STATUSES = ["전체", "예정", "진행중", "완료", "지연"];
@@ -35,9 +35,9 @@ function escapeHtml(value) {
 async function api(path, options = {}) {
   const headers = { "Content-Type": "application/json", ...(options.headers || {}) };
   if (token) headers.Authorization = `Bearer ${token}`;
-  const res = await fetch(`${BASE}${path}`, { ...options, headers });
+  const res = await fetch(path, { ...options, headers });
   if (res.status === 401) {
-    location.href = `${BASE}/`;
+    location.href = `${NAV_BASE}/`;
     return null;
   }
   if (!res.ok) {
@@ -50,9 +50,9 @@ async function api(path, options = {}) {
 async function apiForm(path, formData) {
   const headers = {};
   if (token) headers.Authorization = `Bearer ${token}`;
-  const res = await fetch(`${BASE}${path}`, { method: "POST", headers, body: formData });
+  const res = await fetch(path, { method: "POST", headers, body: formData });
   if (res.status === 401) {
-    location.href = `${BASE}/`;
+    location.href = `${NAV_BASE}/`;
     return null;
   }
   if (!res.ok) {

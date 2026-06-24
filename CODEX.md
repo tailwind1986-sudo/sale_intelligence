@@ -28,6 +28,10 @@
 | 2026-06-24 | `services/telegram_service.py` | `send_message()` timeout 10초 → 30초 (GPT 요약 후 발송 시 timeout 방지) |
 | 2026-06-24 | `app.py` | 쿠키 기반 로그인 유지 구현 — `_get_cookie_manager()` 추가, 로그인 성공 시 브라우저 쿠키에 토큰 저장(30일), 재접속 시 자동 로그인 |
 | 2026-06-24 | `app.py` | 일정 알림 기본값 변경 — 신규 일정 등록 시 알림 기본값 `하루 전` → `30분 전` |
+| 2026-06-24 17:00 | `services/ai_analyzer.py` | `_build_history_context()` + `analyze_meeting_transcript(prev_meetings=)` 추가 — 같은 고객사 이전 미팅 3건 요약을 GPT 프롬프트 앞에 주입해 맥락 있는 분석 가능 |
+| 2026-06-24 17:00 | `services/telegram_service.py` | 주간요약 포맷 개선 — 명사형 끝맺음, 들여쓰기, `📌이번주핵심 / 🏢고객사별현황 / ✅다음주액션` 구조로 변경. `send_daily_digest()` 아침 브리핑에 7일내 액션/미확인약속 항목 추가 |
+| 2026-06-24 17:00 | `app.py` | 미팅요약 결과 페이지 상단에 `📊 주간요약 텔레그램 발송` 버튼 추가 |
+| 2026-06-24 19:30 | `workspace_app/app.js` | `BASE` 변수 버그 수정 — `/mobile/workspace` 접속 시 API 경로가 `/mobile/api/...`로 잘못 조립되어 404 발생. API fetch는 절대경로(`/api/...`) 그대로 사용하고, 리다이렉트 전용 `NAV_BASE`로 분리 |
 
 ---
 
