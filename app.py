@@ -1595,6 +1595,20 @@ def _render_enhanced_meeting_result(db, sel_meeting: MeetingRecord) -> None:
 def page_meeting_results():
     st.title("📋 미팅 요약 결과")
 
+    # 주간요약 발송 버튼
+    from services.telegram_service import send_weekly_summary
+    if st.button("📊 주간요약 텔레그램 발송", use_container_width=True):
+        db_tmp = get_db()
+        try:
+            with st.spinner("GPT-4o 요약 중…"):
+                ok = send_weekly_summary(db_tmp)
+            if ok:
+                st.toast("주간요약 전송 완료!", icon="📊")
+            else:
+                st.warning("이번 주 미팅 기록이 없거나 전송에 실패했습니다.")
+        finally:
+            db_tmp.close()
+
     db = get_db()
     try:
         meetings = (
