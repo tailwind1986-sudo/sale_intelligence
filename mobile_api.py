@@ -62,7 +62,10 @@ def _hash_password(password: str) -> str:
 
 def _auth_token() -> str:
     password_hash = _get_secret("APP_PASSWORD_HASH")
+    plain_password = _get_secret("APP_PASSWORD")
     username = _get_secret("APP_USERNAME", "admin")
+    if not password_hash and plain_password:
+        password_hash = _hash_password(plain_password)
     if not password_hash:
         return ""
     return hmac.new(password_hash.encode("utf-8"), username.encode("utf-8"), hashlib.sha256).hexdigest()

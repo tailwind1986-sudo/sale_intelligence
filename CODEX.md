@@ -5,6 +5,25 @@
 
 ---
 
+## 0-1. 2026-06-25 CODEX 후속 확인
+
+- Claude 커밋 확인:
+  - `7925b08 UI: ChatGPT 스타일 사이드바 레이아웃 + 캘린더 통합`
+  - `da9c388 CODEX.md: 오늘 작업 이력 추가 (UI 리디자인, 캘린더 통합, 미해결 이슈)`
+- 확인 결과:
+  - 로컬 `.env`에는 `APP_PASSWORD_HASH`가 없고 `APP_PASSWORD`만 있음
+  - 기존 `mobile_api.py`는 `APP_PASSWORD_HASH`가 없으면 `_auth_token()`이 빈 문자열을 반환하여 `/api/*` 인증이 우회되는 구조였음
+  - 이 경우 로그인 성공 후에도 `sales_mobile_token`이 빈 문자열로 저장될 수 있어 iframe 캘린더 로그인 흐름과 보안 상태가 불안정해질 수 있음
+- CODEX 수정:
+  - `APP_PASSWORD_HASH`가 없고 `APP_PASSWORD`만 있어도 내부적으로 SHA-256 hash를 생성해 동일한 인증 토큰을 발급하도록 `mobile_api.py` 수정
+  - 운영 환경에서는 여전히 `APP_PASSWORD_HASH` 사용 권장
+- 서버 확인:
+  - `ssh ubuntu@161.33.148.67` 접속 시도는 22번 포트 타임아웃으로 실패
+  - 서버 반영은 아직 미실행
+  - 서버 반영 시 `git pull` 후 `sales-mobile` 재시작 및 `/mobile/api/companies`의 401 여부 확인 필요
+
+---
+
 ## 0. Claude 수정 이력 (CODEX 이후)
 
 > CODEX 작업 이후 Claude가 직접 수정한 내용을 기록합니다.
