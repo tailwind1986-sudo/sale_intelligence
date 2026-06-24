@@ -101,6 +101,25 @@ class SchedulePayload(BaseModel):
     remind_minutes: int = 1440
 
 
+class ActionPayload(BaseModel):
+    company_id: int
+    content: str
+    assignee: str | None = None
+    due_date: date | None = None
+    status: str = "예정"
+    notes: str | None = None
+
+
+class PromisePayload(BaseModel):
+    company_id: int
+    content: str
+    promised_by: str | None = None
+    promised_date: date | None = None
+    due_date: date | None = None
+    status: str = "미확인"
+    notes: str | None = None
+
+
 app = FastAPI(title="Sales Intelligence Mobile Calendar")
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 app.mount("/workspace/static", StaticFiles(directory=WORKSPACE_DIR), name="workspace_static")
@@ -196,6 +215,35 @@ def _meeting_to_dict(m: MeetingRecord):
         "company_id": m.company_id,
         "company_name": m.company.name if m.company else "",
         "summary": m.analysis.one_line_summary if m.analysis else "",
+    }
+
+
+def _action_to_dict(a: ActionItem) -> dict:
+    return {
+        "id": a.id,
+        "company_id": a.company_id,
+        "company_name": a.company.name if a.company else "",
+        "content": a.content,
+        "assignee": a.assignee or "",
+        "due_date": a.due_date.isoformat() if a.due_date else "",
+        "status": a.status or "",
+        "notes": a.notes or "",
+        "is_overdue": bool(a.due_date and a.due_date < date.today() and a.status != "완료"),
+    }
+
+
+def _promise_to_dict(p: Promise) -> dict:
+    return {
+        "id": p.id,
+        "company_id": p.company_id,
+        "company_name": p.company.name if p.company else "",
+        "content": p.content,
+        "promised_by": p.promised_by or "",
+        "promised_date": p.promised_date.isoformat() if p.promised_date else "",
+        "due_date": p.due_date.isoformat() if p.due_date else "",
+        "status": p.status or "",
+        "notes": p.notes or "",
+        "is_overdue": bool(p.due_date and p.due_date < date.today() and p.status != "완료"),
     }
 
 
@@ -312,6 +360,132 @@ def dashboard(db: Session = Depends(get_db)):
             for m in recent_meetings
         ],
     }
+
+
+@app.get("/api/actions", dependencies=[Depends(_require_auth)])
+def list_actions(
+    status: str = "전체",
+    company_id: int | None = None,
+    assignee: str = "",
+    db: Session = Depends(get_db),
+):
+    q = db.query(ActionItem).options(joinedload(ActionItem.company))
+    if status and status != "전체":
+        q = q.filter(ActionItem.status == status)
+    if company_id:
+        q = q.filter(ActionItem.company_id == company_id)
+    if assignee:
+        q = q.filter(ActionItem.assignee.ilike(f"%{assignee}%"))
+    rows = q.order_by(ActionItem.due_date.is_(None), ActionItem.due_date).limit(300).all()
+    return [_action_to_dict(row) for row in rows]
+
+
+@app.post("/api/actions", dependencies=[Depends(_require_auth)])
+def create_action(payload: ActionPayload, db: Session = Depends(get_db)):
+    company = db.get(Company, payload.company_id)
+    if not company:
+        raise HTTPException(status_code=404, detail="Company not found")
+    row = ActionItem(
+        company_id=payload.company_id,
+        content=payload.content,
+        assignee=payload.assignee,
+        due_date=payload.due_date,
+        status=payload.status,
+        notes=payload.notes,
+    )
+    db.add(row)
+    db.commit()
+    db.refresh(row)
+    return _action_to_dict(row)
+
+
+@app.put("/api/actions/{action_id}", dependencies=[Depends(_require_auth)])
+def update_action(action_id: int, payload: ActionPayload, db: Session = Depends(get_db)):
+    row = db.get(ActionItem, action_id)
+    if not row:
+        raise HTTPException(status_code=404, detail="Action item not found")
+    if not db.get(Company, payload.company_id):
+        raise HTTPException(status_code=404, detail="Company not found")
+    row.company_id = payload.company_id
+    row.content = payload.content
+    row.assignee = payload.assignee
+    row.due_date = payload.due_date
+    row.status = payload.status
+    row.notes = payload.notes
+    row.updated_at = datetime.now()
+    db.commit()
+    db.refresh(row)
+    return _action_to_dict(row)
+
+
+@app.delete("/api/actions/{action_id}", dependencies=[Depends(_require_auth)])
+def delete_action(action_id: int, db: Session = Depends(get_db)):
+    row = db.get(ActionItem, action_id)
+    if not row:
+        raise HTTPException(status_code=404, detail="Action item not found")
+    db.delete(row)
+    db.commit()
+    return {"ok": True}
+
+
+@app.get("/api/promises", dependencies=[Depends(_require_auth)])
+def list_promises(status: str = "전체", company_id: int | None = None, db: Session = Depends(get_db)):
+    q = db.query(Promise).options(joinedload(Promise.company))
+    if status and status != "전체":
+        q = q.filter(Promise.status == status)
+    if company_id:
+        q = q.filter(Promise.company_id == company_id)
+    rows = q.order_by(Promise.due_date.is_(None), Promise.due_date).limit(300).all()
+    return [_promise_to_dict(row) for row in rows]
+
+
+@app.post("/api/promises", dependencies=[Depends(_require_auth)])
+def create_promise(payload: PromisePayload, db: Session = Depends(get_db)):
+    if not db.get(Company, payload.company_id):
+        raise HTTPException(status_code=404, detail="Company not found")
+    row = Promise(
+        company_id=payload.company_id,
+        content=payload.content,
+        promised_by=payload.promised_by,
+        promised_date=payload.promised_date,
+        due_date=payload.due_date,
+        status=payload.status,
+        notes=payload.notes,
+    )
+    db.add(row)
+    db.commit()
+    db.refresh(row)
+    return _promise_to_dict(row)
+
+
+@app.put("/api/promises/{promise_id}", dependencies=[Depends(_require_auth)])
+def update_promise(promise_id: int, payload: PromisePayload, db: Session = Depends(get_db)):
+    row = db.get(Promise, promise_id)
+    if not row:
+        raise HTTPException(status_code=404, detail="Promise not found")
+    if not db.get(Company, payload.company_id):
+        raise HTTPException(status_code=404, detail="Company not found")
+    row.company_id = payload.company_id
+    row.content = payload.content
+    row.promised_by = payload.promised_by
+    row.promised_date = payload.promised_date
+    row.due_date = payload.due_date
+    row.status = payload.status
+    row.notes = payload.notes
+    row.updated_at = datetime.now()
+    db.commit()
+    db.refresh(row)
+    return _promise_to_dict(row)
+
+
+@app.delete("/api/promises/{promise_id}", dependencies=[Depends(_require_auth)])
+def delete_promise(promise_id: int, db: Session = Depends(get_db)):
+    row = db.get(Promise, promise_id)
+    if not row:
+        raise HTTPException(status_code=404, detail="Promise not found")
+    db.delete(row)
+    db.commit()
+    return {"ok": True}
 
 
 @app.get("/api/calendar/month", dependencies=[Depends(_require_auth)])

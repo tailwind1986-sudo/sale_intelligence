@@ -17,33 +17,69 @@
       <a class="calendar-link" href="/mobile/">캘린더</a>
     </header>
 
-    <section id="metrics" class="metrics"></section>
+    <nav class="tabs">
+      <button class="active" data-view="dashboard">대시보드</button>
+      <button data-view="actions">액션/약속</button>
+    </nav>
 
-    <section class="grid">
-      <article class="panel">
-        <h2>오늘 일정</h2>
-        <div id="todaySchedules" class="list"></div>
-      </article>
+    <section id="viewDashboard" class="view">
+      <section id="metrics" class="metrics"></section>
 
-      <article class="panel">
-        <h2>7일 내 일정</h2>
-        <div id="weekSchedules" class="list"></div>
-      </article>
+      <section class="grid">
+        <article class="panel">
+          <h2>오늘 일정</h2>
+          <div id="todaySchedules" class="list"></div>
+        </article>
 
-      <article class="panel">
-        <h2>마감 액션</h2>
-        <div id="actions" class="list"></div>
-      </article>
+        <article class="panel">
+          <h2>7일 내 일정</h2>
+          <div id="weekSchedules" class="list"></div>
+        </article>
 
-      <article class="panel">
-        <h2>확인할 약속</h2>
-        <div id="promises" class="list"></div>
-      </article>
+        <article class="panel">
+          <h2>마감 액션</h2>
+          <div id="dashboardActions" class="list"></div>
+        </article>
+
+        <article class="panel">
+          <h2>확인할 약속</h2>
+          <div id="dashboardPromises" class="list"></div>
+        </article>
+      </section>
+
+      <section class="panel">
+        <h2>최근 미팅</h2>
+        <div id="meetings" class="list"></div>
+      </section>
     </section>
 
-    <section class="panel">
-      <h2>최근 미팅</h2>
-      <div id="meetings" class="list"></div>
+    <section id="viewActions" class="view hidden">
+      <section class="panel">
+        <div class="panel-head">
+          <h2>액션아이템</h2>
+          <button id="newActionBtn" class="small-primary">추가</button>
+        </div>
+        <div class="filters">
+          <select id="actionStatus"></select>
+          <select id="actionCompany"></select>
+          <input id="actionAssignee" placeholder="담당자 검색" />
+        </div>
+        <form id="actionForm" class="edit-form hidden"></form>
+        <div id="actionList" class="list"></div>
+      </section>
+
+      <section class="panel">
+        <div class="panel-head">
+          <h2>약속사항</h2>
+          <button id="newPromiseBtn" class="small-primary">추가</button>
+        </div>
+        <div class="filters">
+          <select id="promiseStatus"></select>
+          <select id="promiseCompany"></select>
+        </div>
+        <form id="promiseForm" class="edit-form hidden"></form>
+        <div id="promiseList" class="list"></div>
+      </section>
     </section>
 
     <p id="error" class="error"></p>

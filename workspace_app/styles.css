@@ -61,6 +61,34 @@ h2 {
   text-decoration: none;
 }
 
+.tabs {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 14px;
+  overflow-x: auto;
+}
+
+.tabs button {
+  min-height: 42px;
+  padding: 0 14px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface);
+  color: var(--muted);
+  font-weight: 900;
+  white-space: nowrap;
+}
+
+.tabs button.active {
+  border-color: #bbf7d0;
+  background: #ecfdf5;
+  color: #047857;
+}
+
+.hidden {
+  display: none !important;
+}
+
 .metrics {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -101,6 +129,76 @@ h2 {
   padding: 16px;
 }
 
+.panel-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.panel-head h2 {
+  margin: 0;
+}
+
+.small-primary,
+.manage-row button,
+.form-actions button {
+  min-height: 38px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 10px;
+  background: #111827;
+  color: #fff;
+  font-weight: 900;
+}
+
+.danger-btn {
+  background: #fee2e2 !important;
+  color: #b91c1c !important;
+}
+
+.filters {
+  display: grid;
+  grid-template-columns: 140px minmax(160px, 1fr) minmax(140px, 1fr);
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+input,
+select,
+textarea {
+  width: 100%;
+  min-height: 40px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: #f9fafb;
+  color: var(--text);
+  font: inherit;
+  padding: 8px 10px;
+}
+
+textarea {
+  min-height: 72px;
+  resize: vertical;
+}
+
+.edit-form {
+  display: grid;
+  grid-template-columns: minmax(160px, 1fr) minmax(220px, 2fr) minmax(120px, 1fr);
+  gap: 8px;
+  margin-bottom: 12px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fbfcfd;
+}
+
+.form-actions {
+  display: flex;
+  gap: 8px;
+}
+
 .list {
   display: flex;
   flex-direction: column;
@@ -118,6 +216,25 @@ h2 {
 .item:first-child {
   border-top: 0;
   padding-top: 0;
+}
+
+.manage-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 120px 64px 64px;
+  gap: 8px;
+  align-items: center;
+  padding: 10px 0;
+  border-top: 1px solid #f1f3f5;
+}
+
+.manage-row:first-child {
+  border-top: 0;
+  padding-top: 0;
+}
+
+.overdue .title,
+.overdue .date {
+  color: var(--danger);
 }
 
 .date {
@@ -152,5 +269,15 @@ h2 {
 
   .item {
     grid-template-columns: 68px minmax(0, 1fr);
+  }
+
+  .filters,
+  .edit-form,
+  .manage-row {
+    grid-template-columns: 1fr;
+  }
+
+  .manage-row {
+    align-items: stretch;
   }
 }

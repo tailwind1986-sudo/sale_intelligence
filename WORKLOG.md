@@ -28,6 +28,31 @@
 - 서버 반영:
   - 아직 하지 않음
 
+### Streamlit 제거 2단계. 액션아이템/약속사항 관리
+
+- 상태: 완료
+- 변경 파일: `mobile_api.py`, `workspace_app/index.html`, `workspace_app/app.js`, `workspace_app/styles.css`
+- 구현 내용:
+  - `/mobile/api/actions` 액션아이템 목록/추가/수정/삭제 API 추가
+  - `/mobile/api/promises` 약속사항 목록/추가/수정/삭제 API 추가
+  - 상태, 고객사, 담당자 필터를 API에 반영
+  - workspace에 `액션/약속` 탭 추가
+  - 액션아이템 상태 변경, 수정, 삭제, 신규 추가 화면 구현
+  - 약속사항 상태 변경, 수정, 삭제, 신규 추가 화면 구현
+  - 기한 초과 항목을 시각적으로 강조
+- 빠진 기능 검증:
+  - 기존 Streamlit 액션아이템 탭의 상태 필터, 고객사 필터, 담당자 검색, 상태 변경, 기한/내용 수정, 삭제, 수동 추가 흐름 대응
+  - 기존 Streamlit 약속사항 탭의 상태 필터, 고객사 필터, 상태 변경, 삭제, 수동 추가 흐름 대응
+- 보존 사항:
+  - 기존 Streamlit 액션아이템 관리 화면 유지
+  - 기존 DB 스키마 변경 없음
+- 검증:
+  - `python -m py_compile mobile_api.py` 통과
+  - `ast.parse(..., feature_version=(3,10))` 통과
+  - `node --check workspace_app\app.js` 통과
+- 서버 반영:
+  - 아직 하지 않음
+
 ### 1. 오늘/이번 주 실행 대시보드
 
 - 상태: 완료
