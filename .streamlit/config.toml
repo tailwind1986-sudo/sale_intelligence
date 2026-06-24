@@ -7,6 +7,7 @@ textColor = "#1E293B"
 [server]
 maxUploadSize = 50
 headless = true
+maxMessageSize = 200
 
 [browser]
 gatherUsageStats = false
