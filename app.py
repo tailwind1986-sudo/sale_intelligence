@@ -2720,17 +2720,34 @@ def page_search():
     try:
         # 고객사 검색
         companies = db.query(Company).filter(
-            or_(Company.name.ilike(f"%{query}%"), Company.memo.ilike(f"%{query}%"))
+            or_(
+                Company.name.ilike(f"%{query}%"),
+                Company.memo.ilike(f"%{query}%"),
+                Company.industry.ilike(f"%{query}%"),
+                Company.address.ilike(f"%{query}%"),
+                Company.website.ilike(f"%{query}%"),
+            )
         ).all()
 
         # 담당자 검색
         contacts = db.query(Contact).filter(
-            or_(Contact.name.ilike(f"%{query}%"), Contact.position.ilike(f"%{query}%"))
+            or_(
+                Contact.name.ilike(f"%{query}%"),
+                Contact.position.ilike(f"%{query}%"),
+                Contact.phone.ilike(f"%{query}%"),
+                Contact.email.ilike(f"%{query}%"),
+                Contact.notes.ilike(f"%{query}%"),
+            )
         ).all()
 
         # 미팅 내용 검색 (원문 + 분석)
         meetings = db.query(MeetingRecord).filter(
-            MeetingRecord.raw_text.ilike(f"%{query}%")
+            or_(
+                MeetingRecord.raw_text.ilike(f"%{query}%"),
+                MeetingRecord.attendees.ilike(f"%{query}%"),
+                MeetingRecord.memo.ilike(f"%{query}%"),
+                MeetingRecord.file_name.ilike(f"%{query}%"),
+            )
         ).limit(20).all()
 
         analyses_q = db.query(MeetingAnalysis).filter(
@@ -2741,10 +2758,39 @@ def page_search():
         ).limit(10).all()
 
         # 약속사항 검색
-        promises = db.query(Promise).filter(Promise.content.ilike(f"%{query}%")).all()
+        promises = db.query(Promise).filter(
+            or_(
+                Promise.content.ilike(f"%{query}%"),
+                Promise.promised_by.ilike(f"%{query}%"),
+                Promise.notes.ilike(f"%{query}%"),
+                Promise.status.ilike(f"%{query}%"),
+            )
+        ).all()
 
         # 액션아이템 검색
-        actions = db.query(ActionItem).filter(ActionItem.content.ilike(f"%{query}%")).all()
+        actions = db.query(ActionItem).filter(
+            or_(
+                ActionItem.content.ilike(f"%{query}%"),
+                ActionItem.assignee.ilike(f"%{query}%"),
+                ActionItem.notes.ilike(f"%{query}%"),
+                ActionItem.status.ilike(f"%{query}%"),
+            )
+        ).all()
+
+        # 일정 검색
+        schedules = (
+            db.query(Schedule)
+            .options(joinedload(Schedule.company))
+            .filter(
+                or_(
+                    Schedule.title.ilike(f"%{query}%"),
+                    Schedule.description.ilike(f"%{query}%"),
+                )
+            )
+            .order_by(Schedule.start_dt.desc())
+            .limit(30)
+            .all()
+        )
 
         st.divider()
 
@@ -2780,7 +2826,14 @@ def page_search():
             for a in actions:
                 st.markdown(f"• {status_badge(a.status)} [{a.company.name}] {a.content}", unsafe_allow_html=True)
 
-        total = len(companies) + len(contacts) + len(meetings) + len(analyses_q) + len(promises) + len(actions)
+        if schedules:
+            st.subheader(f"📅 일정 ({len(schedules)}건)")
+            for s in schedules:
+                company_name = s.company.name if s.company else "-"
+                when = fmt_date(s.start_dt.date()) if s.start_dt else "-"
+                st.write(f"• **{when}** [{company_name}] {s.title}")
+
+        total = len(companies) + len(contacts) + len(meetings) + len(analyses_q) + len(promises) + len(actions) + len(schedules)
         if total == 0:
             st.warning("검색 결과가 없습니다.")
 
