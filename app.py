@@ -20,6 +20,7 @@ import streamlit.components.v1 as components
 from dotenv import load_dotenv
 from sqlalchemy import desc, func, or_
 from sqlalchemy.orm import joinedload
+from sqlalchemy.orm.attributes import flag_modified
 
 load_dotenv()
 
@@ -1515,6 +1516,16 @@ def _add_schedule_candidate(db, meeting: MeetingRecord, candidate: dict) -> bool
     return True
 
 
+def _update_schedule_candidate_state(meeting: MeetingRecord, index: int, **updates) -> None:
+    analysis = meeting.analysis
+    candidates = list(getattr(analysis, "schedule_candidates", None) or [])
+    if index < 0 or index >= len(candidates) or not isinstance(candidates[index], dict):
+        return
+    candidates[index] = {**candidates[index], **updates}
+    analysis.schedule_candidates = candidates
+    flag_modified(analysis, "schedule_candidates")
+
+
 def _save_relationship_note(db, meeting: MeetingRecord, note: dict) -> None:
     category = note.get("category") or "고객 관계 정보"
     person = note.get("person_or_company") or meeting.company.name
@@ -1947,6 +1958,99 @@ def page_meeting_results():
 
 
 # ─── 고객사별 타임라인 ────────────────────────────────────────────────────────
+
+
+
+def page_schedule_candidates():
+    st.title("\U0001f9ed AI \uc77c\uc815 \ud6c4\ubcf4 \uc2b9\uc778\ud568")
+    st.caption("\ud68c\uc758\ub85d\uc5d0\uc11c AI\uac00 \ucd94\ucd9c\ud55c \uc77c\uc815 \ud6c4\ubcf4\ub97c \ud655\uc778\ud55c \ub4a4 \uc77c\uc815\ud45c\uc5d0 \uc800\uc7a5\ud558\uac70\ub098 \ubb34\uc2dc\ud569\ub2c8\ub2e4.")
+
+    db = get_db()
+    try:
+        meetings = (
+            db.query(MeetingRecord)
+            .options(joinedload(MeetingRecord.company), joinedload(MeetingRecord.analysis))
+            .filter(MeetingRecord.analysis.has())
+            .order_by(desc(MeetingRecord.meeting_date), desc(MeetingRecord.created_at))
+            .limit(200)
+            .all()
+        )
+
+        rows: list[tuple[MeetingRecord, int, dict]] = []
+        saved_count = ignored_count = 0
+        for meeting in meetings:
+            candidates = _json_list(getattr(meeting.analysis, "schedule_candidates", None))
+            for idx, candidate in enumerate(candidates):
+                if not isinstance(candidate, dict):
+                    continue
+                if candidate.get("ignored"):
+                    ignored_count += 1
+                elif candidate.get("saved") or _schedule_candidate_exists(db, meeting, candidate):
+                    saved_count += 1
+                else:
+                    rows.append((meeting, idx, candidate))
+
+        c1, c2, c3 = st.columns(3)
+        c1.metric("\ub300\uae30 \ud6c4\ubcf4", f"{len(rows)}\uac74")
+        c2.metric("\uc800\uc7a5\ub428", f"{saved_count}\uac74")
+        c3.metric("\ubb34\uc2dc\ub428", f"{ignored_count}\uac74")
+
+        if not rows:
+            st.success("\uac80\ud1a0 \ub300\uae30 \uc911\uc778 \uc77c\uc815 \ud6c4\ubcf4\uac00 \uc5c6\uc2b5\ub2c8\ub2e4.")
+            return
+
+        for meeting, idx, candidate in rows:
+            company_name = meeting.company.name if meeting.company else "-"
+            default_date = _parse_ai_date(candidate.get("date")) or (meeting.meeting_date or date.today())
+            default_end = _parse_ai_date(candidate.get("end_date")) or default_date
+            title = candidate.get("title") or f"{company_name} \uc77c\uc815 \ud6c4\ubcf4"
+            project = candidate.get("project") or ""
+            assignee = candidate.get("assignee") or ""
+            location = candidate.get("location") or ""
+            note = candidate.get("note") or ""
+
+            with st.expander(f"{fmt_date(default_date)} · {company_name} · {title}", expanded=False):
+                st.write(f"\ud68c\uc758\uc77c: {fmt_date(meeting.meeting_date)}")
+                st.write(f"\uc2e0\ub8b0\ub3c4: {candidate.get('confidence') or '\ud655\uc778 \ud544\uc694'}")
+                with st.form(f"schedule_candidate_form_{meeting.id}_{idx}"):
+                    input_title = st.text_input("\uc77c\uc815 \uc81c\ubaa9", value=title)
+                    input_date = st.date_input("\uc2dc\uc791\uc77c", value=default_date)
+                    input_end = st.date_input("\uc885\ub8cc\uc77c", value=default_end)
+                    input_project = st.text_input("\uad00\ub828 \ud504\ub85c\uc81d\ud2b8", value=project)
+                    input_assignee = st.text_input("\ub2f4\ub2f9\uc790", value=assignee)
+                    input_location = st.text_input("\uc7a5\uc18c", value=location)
+                    input_note = st.text_area("\ube44\uace0/\uadfc\uac70", value=note, height=90)
+
+                    save_col, ignore_col = st.columns(2)
+                    save_clicked = save_col.form_submit_button("\uc77c\uc815\ud45c\uc5d0 \uc800\uc7a5", type="primary", use_container_width=True)
+                    ignore_clicked = ignore_col.form_submit_button("\ubb34\uc2dc", use_container_width=True)
+
+                if save_clicked:
+                    updated = {
+                        **candidate,
+                        "title": input_title,
+                        "date": input_date.isoformat(),
+                        "end_date": input_end.isoformat(),
+                        "project": input_project,
+                        "assignee": input_assignee,
+                        "location": input_location,
+                        "note": input_note,
+                    }
+                    if _add_schedule_candidate(db, meeting, updated):
+                        _update_schedule_candidate_state(meeting, idx, **updated, saved=True, ignored=False)
+                        db.commit()
+                        st.toast("\uc77c\uc815\ud45c\uc5d0 \uc800\uc7a5\ud588\uc2b5\ub2c8\ub2e4. \uc54c\ub9bc \ub300\uc0c1\uc5d0 \ud3ec\ud568\ub429\ub2c8\ub2e4.", icon="✅")
+                        st.rerun()
+                    st.warning("\ub0a0\uc9dc\uac00 \uba85\ud655\ud558\uc9c0 \uc54a\uc544 \uc800\uc7a5\ud560 \uc218 \uc5c6\uc2b5\ub2c8\ub2e4.")
+
+                if ignore_clicked:
+                    _update_schedule_candidate_state(meeting, idx, ignored=True)
+                    db.commit()
+                    st.toast("\uc77c\uc815 \ud6c4\ubcf4\ub97c \ubb34\uc2dc \ucc98\ub9ac\ud588\uc2b5\ub2c8\ub2e4.", icon="🗂️")
+                    st.rerun()
+    finally:
+        db.close()
+
 
 def page_timeline():
     st.title("📅 고객사별 타임라인")
@@ -3506,6 +3610,7 @@ PAGES = {
     "🏢 고객사 관리":        page_company_management,
     "📤 미팅 기록 업로드":   page_meeting_upload,
     "📋 미팅 요약 결과":     page_meeting_results,
+    "🧭 AI 일정 후보":       page_schedule_candidates,
     "📅 고객사별 타임라인":   page_timeline,
     "✅ 액션아이템 관리":     page_action_items,
     "⚠️ 리스크 분석":        page_risk_analysis,
