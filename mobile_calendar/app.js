@@ -416,10 +416,12 @@ function renderMorePanel() {
   $("dayTitle").textContent = "\ub354\ubcf4\uae30";
   $("daySubtitle").textContent = "\ubaa8\ubc14\uc77c \uc77c\uc815 \uad00\ub9ac";
   $("dayItems").innerHTML = `
+    <button class="menu-row" id="openWorkspace">빠른 대시보드</button>
     <button class="menu-row" id="reloadCalendar">\uc0c8\ub85c\uace0\uce68</button>
     <button class="menu-row" id="goTodayMenu">\uc624\ub298\ub85c \uc774\ub3d9</button>
     <button class="menu-row danger-text" id="logoutMobile">\ub85c\uadf8\uc544\uc6c3</button>
   `;
+  $("openWorkspace").onclick = () => { location.href = `${BASE}/workspace`; };
   $("reloadCalendar").onclick = () => loadMonth();
   $("goTodayMenu").onclick = goToday;
   $("logoutMobile").onclick = () => {

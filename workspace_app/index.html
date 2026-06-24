@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#ffffff" />
+  <title>Sales Workspace</title>
+  <link rel="stylesheet" href="/mobile/workspace/static/styles.css?v=20260624-ws1" />
+</head>
+<body>
+  <main class="shell">
+    <header class="topbar">
+      <div>
+        <p class="eyebrow">Sales Intelligence</p>
+        <h1>오늘의 업무</h1>
+      </div>
+      <a class="calendar-link" href="/mobile/">캘린더</a>
+    </header>
+
+    <section id="metrics" class="metrics"></section>
+
+    <section class="grid">
+      <article class="panel">
+        <h2>오늘 일정</h2>
+        <div id="todaySchedules" class="list"></div>
+      </article>
+
+      <article class="panel">
+        <h2>7일 내 일정</h2>
+        <div id="weekSchedules" class="list"></div>
+      </article>
+
+      <article class="panel">
+        <h2>마감 액션</h2>
+        <div id="actions" class="list"></div>
+      </article>
+
+      <article class="panel">
+        <h2>확인할 약속</h2>
+        <div id="promises" class="list"></div>
+      </article>
+    </section>
+
+    <section class="panel">
+      <h2>최근 미팅</h2>
+      <div id="meetings" class="list"></div>
+    </section>
+
+    <p id="error" class="error"></p>
+  </main>
+  <script src="/mobile/workspace/static/app.js?v=20260624-ws1"></script>
+</body>
+</html>

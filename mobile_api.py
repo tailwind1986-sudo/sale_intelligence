@@ -22,11 +22,12 @@ from sqlalchemy.orm import Session, joinedload
 load_dotenv()
 
 from database.db import SessionLocal, create_database
-from database.models import Company, MeetingRecord, Schedule
+from database.models import ActionItem, Company, MeetingRecord, Promise, Schedule
 
 
 APP_DIR = Path(__file__).parent
 STATIC_DIR = APP_DIR / "mobile_calendar"
+WORKSPACE_DIR = APP_DIR / "workspace_app"
 
 
 def _read_secret_file(path: Path) -> dict:
@@ -102,6 +103,7 @@ class SchedulePayload(BaseModel):
 
 app = FastAPI(title="Sales Intelligence Mobile Calendar")
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
+app.mount("/workspace/static", StaticFiles(directory=WORKSPACE_DIR), name="workspace_static")
 
 
 @app.on_event("startup")
@@ -112,6 +114,11 @@ def on_startup() -> None:
 @app.get("/")
 def index():
     return FileResponse(STATIC_DIR / "index.html")
+
+
+@app.get("/workspace")
+def workspace_index():
+    return FileResponse(WORKSPACE_DIR / "index.html")
 
 
 @app.get("/sw.js")
@@ -189,6 +196,121 @@ def _meeting_to_dict(m: MeetingRecord):
         "company_id": m.company_id,
         "company_name": m.company.name if m.company else "",
         "summary": m.analysis.one_line_summary if m.analysis else "",
+    }
+
+
+def _brief_text(value: str | None, limit: int = 90) -> str:
+    text = (value or "").strip()
+    return text[:limit] + ("…" if len(text) > limit else "")
+
+
+@app.get("/api/dashboard", dependencies=[Depends(_require_auth)])
+def dashboard(db: Session = Depends(get_db)):
+    now = datetime.now()
+    today = now.date()
+    day_start = datetime.combine(today, time.min)
+    day_end = datetime.combine(today, time.max)
+    week_end = day_end + timedelta(days=7)
+
+    today_schedules = (
+        db.query(Schedule)
+        .options(joinedload(Schedule.company))
+        .filter(Schedule.start_dt <= day_end, Schedule.end_dt >= day_start)
+        .order_by(Schedule.all_day.desc(), Schedule.start_dt)
+        .limit(20)
+        .all()
+    )
+    week_schedules = (
+        db.query(Schedule)
+        .options(joinedload(Schedule.company))
+        .filter(Schedule.start_dt >= now, Schedule.start_dt <= week_end)
+        .order_by(Schedule.start_dt)
+        .limit(20)
+        .all()
+    )
+    actions = (
+        db.query(ActionItem)
+        .options(joinedload(ActionItem.company))
+        .filter(
+            ActionItem.status.in_(["예정", "진행중", "지연"]),
+            ActionItem.due_date != None,
+            ActionItem.due_date <= week_end.date(),
+        )
+        .order_by(ActionItem.due_date)
+        .limit(20)
+        .all()
+    )
+    promises = (
+        db.query(Promise)
+        .options(joinedload(Promise.company))
+        .filter(
+            Promise.status.in_(["미확인", "진행중", "지연"]),
+            Promise.due_date != None,
+            Promise.due_date <= week_end.date(),
+        )
+        .order_by(Promise.due_date)
+        .limit(20)
+        .all()
+    )
+    recent_meetings = (
+        db.query(MeetingRecord)
+        .options(joinedload(MeetingRecord.company), joinedload(MeetingRecord.analysis))
+        .order_by(MeetingRecord.meeting_date.desc(), MeetingRecord.created_at.desc())
+        .limit(8)
+        .all()
+    )
+
+    def schedule_item(s: Schedule) -> dict:
+        return {
+            "id": s.id,
+            "title": s.title,
+            "company": s.company.name if s.company else "",
+            "date": s.start_dt.date().isoformat(),
+            "time": "종일" if s.all_day else f"{s.start_dt.strftime('%H:%M')}~{s.end_dt.strftime('%H:%M')}",
+            "color": s.color or "#2563EB",
+        }
+
+    return {
+        "today": today.isoformat(),
+        "metrics": {
+            "today_schedules": len(today_schedules),
+            "week_schedules": len(week_schedules),
+            "due_actions": len(actions),
+            "open_promises": len(promises),
+        },
+        "today_schedules": [schedule_item(s) for s in today_schedules],
+        "week_schedules": [schedule_item(s) for s in week_schedules],
+        "actions": [
+            {
+                "id": a.id,
+                "company": a.company.name if a.company else "",
+                "content": _brief_text(a.content),
+                "assignee": a.assignee or "",
+                "due_date": a.due_date.isoformat() if a.due_date else "",
+                "status": a.status or "",
+            }
+            for a in actions
+        ],
+        "promises": [
+            {
+                "id": p.id,
+                "company": p.company.name if p.company else "",
+                "content": _brief_text(p.content),
+                "promised_by": p.promised_by or "",
+                "due_date": p.due_date.isoformat() if p.due_date else "",
+                "status": p.status or "",
+            }
+            for p in promises
+        ],
+        "recent_meetings": [
+            {
+                "id": m.id,
+                "company": m.company.name if m.company else "",
+                "date": m.meeting_date.isoformat() if m.meeting_date else "",
+                "summary": _brief_text(m.analysis.one_line_summary if m.analysis else m.memo),
+            }
+            for m in recent_meetings
+        ],
     }
 
 

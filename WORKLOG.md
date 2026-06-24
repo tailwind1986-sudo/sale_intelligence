@@ -7,6 +7,27 @@
 
 ## 2026-06-24
 
+### Streamlit 제거 1단계. FastAPI 빠른 대시보드
+
+- 상태: 완료
+- 변경 파일: `mobile_api.py`, `mobile_calendar/app.js`, `workspace_app/index.html`, `workspace_app/styles.css`, `workspace_app/app.js`
+- 구현 내용:
+  - `/mobile/workspace` 경로에 Streamlit이 아닌 정적 HTML/JS 기반 빠른 대시보드 추가
+  - `/mobile/api/dashboard` API 추가
+  - 오늘 일정, 7일 내 일정, 마감 액션, 확인할 약속, 최근 미팅을 JSON으로 제공
+  - 기존 모바일 로그인 토큰(`sales_mobile_token`)을 그대로 사용
+  - 모바일 캘린더 `더보기` 탭에 `빠른 대시보드` 이동 버튼 추가
+- 보존 사항:
+  - 기존 Streamlit 대시보드와 모바일 캘린더 기능 유지
+  - 기존 DB 스키마 변경 없음
+- 검증:
+  - `python -m py_compile mobile_api.py` 통과
+  - `node --check mobile_calendar\app.js` 통과
+  - `node --check workspace_app\app.js` 통과
+  - 로컬 기본 Python 환경에는 FastAPI 패키지가 없어 TestClient 검증은 생략
+- 서버 반영:
+  - 아직 하지 않음
+
 ### 1. 오늘/이번 주 실행 대시보드
 
 - 상태: 완료
