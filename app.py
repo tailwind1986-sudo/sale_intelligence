@@ -10,7 +10,7 @@ import re
 import hashlib
 import hmac
 from calendar import monthcalendar, monthrange
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, time, timedelta
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
@@ -1176,17 +1176,24 @@ def _save_analysis(db, record: MeetingRecord, result: dict) -> None:
         meeting_id=record.id,
         one_line_summary=result.get("one_line_summary"),
         detailed_summary=result.get("detailed_summary"),
+        meeting_overview=result.get("meeting_overview", {}),
+        topic_discussions=result.get("topic_discussions", []),
         key_discussions=result.get("key_discussions", []),
+        decisions=result.get("decisions", []),
         customer_needs=result.get("customer_needs", []),
         complaints=result.get("complaints", []),
         price_mentions=result.get("price_mentions", []),
         competitor_mentions=result.get("competitor_mentions", []),
         promises_raw=result.get("promises", []),
         follow_ups=result.get("follow_ups", []),
+        action_items_structured=result.get("action_items_structured", []),
         pending_items=result.get("pending_items", []),
         risk_factors=result.get("risk_factors", []),
+        risks_and_checks=result.get("risks_and_checks", []),
         next_meeting_questions=result.get("next_meeting_questions", []),
         sales_opportunities=result.get("sales_opportunities", []),
+        relationship_notes=result.get("relationship_notes", []),
+        schedule_candidates=result.get("schedule_candidates", []),
         trust_score=result.get("trust_score", 50),
         risk_score=result.get("risk_score", 50),
     )
@@ -1211,19 +1218,304 @@ def _save_analysis(db, record: MeetingRecord, result: dict) -> None:
             status="미확인",
         ))
 
-    # 후속조치 → 액션아이템 자동 생성
-    for fu in result.get("follow_ups", []):
-        db.add(ActionItem(
-            meeting_id=record.id,
-            company_id=record.company_id,
-            content=fu,
-            status="예정",
-        ))
+    structured_actions = result.get("action_items_structured") or []
+    if structured_actions:
+        for item in structured_actions:
+            due = None
+            raw_due = item.get("due_date")
+            if raw_due:
+                try:
+                    due = datetime.strptime(raw_due, "%Y-%m-%d").date()
+                except Exception:
+                    pass
+            assignee = item.get("assignee")
+            db.add(ActionItem(
+                meeting_id=record.id,
+                company_id=record.company_id,
+                content=item.get("task") or item.get("content") or "",
+                assignee=assignee if assignee and assignee != "확인 필요" else None,
+                due_date=due,
+                status="예정",
+                notes=item.get("note"),
+            ))
+    else:
+        for fu in result.get("follow_ups", []):
+            db.add(ActionItem(
+                meeting_id=record.id,
+                company_id=record.company_id,
+                content=fu,
+                status="예정",
+            ))
 
     db.commit()
 
 
 # ─── 미팅 요약 결과 ────────────────────────────────────────────────────────────
+
+def _json_list(value) -> list:
+    if not value:
+        return []
+    if isinstance(value, list):
+        return value
+    if isinstance(value, dict):
+        return [value]
+    return [value]
+
+
+def _json_dict(value) -> dict:
+    return value if isinstance(value, dict) else {}
+
+
+def _parse_ai_date(value):
+    if not value or str(value).strip() in {"확인 필요", "null", "None", "-"}:
+        return None
+    try:
+        return datetime.strptime(str(value)[:10], "%Y-%m-%d").date()
+    except Exception:
+        return None
+
+
+def _schedule_candidate_exists(db, meeting: MeetingRecord, candidate: dict) -> bool:
+    start_date = _parse_ai_date(candidate.get("date"))
+    title = (candidate.get("title") or "").strip()
+    if not start_date or not title:
+        return False
+    return db.query(Schedule).filter(
+        Schedule.company_id == meeting.company_id,
+        Schedule.title == title,
+        func.date(Schedule.start_dt) == start_date.isoformat(),
+    ).first() is not None
+
+
+def _add_schedule_candidate(db, meeting: MeetingRecord, candidate: dict) -> bool:
+    start_date = _parse_ai_date(candidate.get("date"))
+    if not start_date:
+        return False
+
+    end_date = _parse_ai_date(candidate.get("end_date")) or start_date
+    title = (candidate.get("title") or "회의록 추출 일정").strip()
+    details = [
+        f"프로젝트: {candidate.get('project') or '확인 필요'}",
+        f"담당자: {candidate.get('assignee') or '확인 필요'}",
+        f"장소: {candidate.get('location') or '확인 필요'}",
+        f"비고: {candidate.get('note') or '-'}",
+        f"출처: {fmt_date(meeting.meeting_date)} {meeting.company.name} 회의록",
+    ]
+    db.add(Schedule(
+        title=title,
+        description="\n".join(details),
+        start_dt=datetime.combine(start_date, time(9, 0)),
+        end_dt=datetime.combine(end_date, time(18, 0)),
+        all_day=True,
+        color="#0EA5E9",
+        company_id=meeting.company_id,
+        remind_enabled=True,
+        remind_minutes=1440,
+    ))
+    db.commit()
+    return True
+
+
+def _save_relationship_note(db, meeting: MeetingRecord, note: dict) -> None:
+    category = note.get("category") or "고객 관계 정보"
+    person = note.get("person_or_company") or meeting.company.name
+    content = note.get("content") or ""
+    use_point = note.get("use_point") or ""
+    sensitivity = note.get("sensitivity") or "낮음"
+    db.add(CustomerInfo(
+        company_id=meeting.company_id,
+        category=category,
+        key=person,
+        value=content,
+        importance="높음" if sensitivity == "높음" else "보통",
+        notes=f"활용 포인트: {use_point}\n민감도: {sensitivity}\n출처: {fmt_date(meeting.meeting_date)} 회의록",
+    ))
+    db.commit()
+
+
+def _render_enhanced_meeting_result(db, sel_meeting: MeetingRecord) -> None:
+    a = sel_meeting.analysis
+    company = sel_meeting.company
+    overview = _json_dict(getattr(a, "meeting_overview", None))
+    topic_discussions = _json_list(getattr(a, "topic_discussions", None))
+    decisions = _json_list(getattr(a, "decisions", None))
+    structured_actions = _json_list(getattr(a, "action_items_structured", None))
+    risks_and_checks = _json_list(getattr(a, "risks_and_checks", None)) or _json_list(a.risk_factors)
+    relationship_notes = _json_list(getattr(a, "relationship_notes", None))
+    schedule_candidates = _json_list(getattr(a, "schedule_candidates", None))
+
+    st.markdown(f"### {company.name} 회의록 분석")
+    st.caption(f"{fmt_date(sel_meeting.meeting_date)} · {sel_meeting.meeting_type or '-'}")
+
+    m1, m2, m3, m4 = st.columns(4)
+    m1.metric("신뢰도", f"{a.trust_score or 0}/100")
+    m2.metric("위험도", f"{a.risk_score or 0}/100")
+    m3.metric("후속조치", f"{len(sel_meeting.action_items)}건")
+    m4.metric("일정 후보", f"{len(schedule_candidates)}건")
+
+    st.info(a.one_line_summary or "한 줄 결론이 없습니다.")
+
+    report_tab, action_tab, schedule_tab, relation_tab, copy_tab, raw_tab = st.tabs(
+        ["보고서", "후속조치", "일정", "고객관계", "카톡보고", "원문"]
+    )
+
+    with report_tab:
+        st.subheader("1. 회의 개요")
+        st.write(f"**회의 주제:** {overview.get('topic') or '확인 필요'}")
+        st.write(f"**주요 참석자:** {overview.get('attendees') or sel_meeting.attendees or '확인 필요'}")
+        st.write(f"**회의 목적:** {overview.get('purpose') or '확인 필요'}")
+
+        st.subheader("2. 전체 요약")
+        st.write(a.detailed_summary or "-")
+
+        st.subheader("3. 핵심 논의 내용")
+        if topic_discussions:
+            for item in topic_discussions:
+                if isinstance(item, dict):
+                    with st.expander(item.get("topic") or "주제", expanded=True):
+                        st.write(f"**현재 상황:** {item.get('current_status') or '-'}")
+                        st.write(f"**논의 내용:** {item.get('discussion') or '-'}")
+                        st.write(f"**쟁점:** {item.get('issue') or '-'}")
+                        st.write(f"**검토 필요사항:** {item.get('needs_review') or '-'}")
+                else:
+                    st.write(f"- {item}")
+        else:
+            for item in _json_list(a.key_discussions):
+                st.write(f"- {item}")
+
+        st.subheader("4. 결정사항")
+        if decisions:
+            for item in decisions:
+                st.write(f"- {item}")
+        else:
+            st.write("확정된 결정사항 없음 또는 확인 필요")
+
+        st.subheader("6. 리스크 / 확인 필요사항")
+        if risks_and_checks:
+            for item in risks_and_checks:
+                st.write(f"- {item}")
+        else:
+            st.write("특이 리스크 없음")
+
+    with action_tab:
+        st.subheader("5. 후속 조치")
+        action_rows = []
+        for item in structured_actions:
+            if isinstance(item, dict):
+                action_rows.append({
+                    "할 일": item.get("task") or item.get("content") or "",
+                    "담당자": item.get("assignee") or "확인 필요",
+                    "기한": item.get("due_date") or "확인 필요",
+                    "비고": item.get("note") or "",
+                })
+            else:
+                action_rows.append({"할 일": str(item), "담당자": "확인 필요", "기한": "확인 필요", "비고": ""})
+        if action_rows:
+            st.dataframe(pd.DataFrame(action_rows), use_container_width=True, hide_index=True)
+        else:
+            st.write("AI가 추출한 구조화 후속조치가 없습니다.")
+
+        st.divider()
+        st.markdown("**등록된 액션아이템**")
+        if not sel_meeting.action_items:
+            st.write("등록된 액션아이템이 없습니다.")
+        for ai in sel_meeting.action_items:
+            cols = st.columns([4, 1.4])
+            cols[0].markdown(
+                f"- {status_badge(ai.status)} **{ai.content}** "
+                f"(담당: {ai.assignee or '-'}, 기한: {fmt_date(ai.due_date)})",
+                unsafe_allow_html=True,
+            )
+            if ai.status in ACTION_STATUSES:
+                new_status = cols[1].selectbox(
+                    "상태",
+                    ACTION_STATUSES,
+                    index=ACTION_STATUSES.index(ai.status),
+                    key=f"enhanced_ai_status_{ai.id}",
+                    label_visibility="collapsed",
+                )
+                if new_status != ai.status:
+                    ai.status = new_status
+                    db.commit()
+                    st.rerun()
+
+    with schedule_tab:
+        st.subheader("9. 일정 / 타임라인")
+        if not schedule_candidates:
+            st.write("회의록에서 추출된 일정 후보가 없습니다.")
+        else:
+            rows = []
+            for item in schedule_candidates:
+                if isinstance(item, dict):
+                    rows.append({
+                        "날짜": item.get("date") or "확인 필요",
+                        "일정 내용": item.get("title") or "",
+                        "관련 프로젝트": item.get("project") or "",
+                        "담당자": item.get("assignee") or "",
+                        "장소": item.get("location") or "",
+                        "비고": item.get("note") or "",
+                    })
+            if rows:
+                st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
+
+            for idx, item in enumerate(schedule_candidates):
+                if not isinstance(item, dict):
+                    continue
+                title = item.get("title") or f"일정 후보 {idx + 1}"
+                with st.expander(title, expanded=False):
+                    st.write(f"날짜: {item.get('date') or '확인 필요'}")
+                    st.write(f"프로젝트: {item.get('project') or '확인 필요'}")
+                    st.write(f"담당자: {item.get('assignee') or '확인 필요'}")
+                    st.write(f"장소: {item.get('location') or '확인 필요'}")
+                    st.write(f"비고: {item.get('note') or '-'}")
+                    if _schedule_candidate_exists(db, sel_meeting, item):
+                        st.success("이미 캘린더에 등록된 일정입니다.")
+                    elif _parse_ai_date(item.get("date")):
+                        if st.button("캘린더에 추가", key=f"add_schedule_candidate_{sel_meeting.id}_{idx}"):
+                            _add_schedule_candidate(db, sel_meeting, item)
+                            st.toast("캘린더에 추가했습니다.", icon="✅")
+                            st.rerun()
+                    else:
+                        st.warning("날짜가 명확하지 않아 자동 등록할 수 없습니다. 내용을 확인한 뒤 수동 등록해주세요.")
+
+    with relation_tab:
+        st.subheader("8. 고객 관계 정보 / 개인 메모")
+        if not relationship_notes:
+            st.write("추출된 고객 관계 정보가 없습니다.")
+        else:
+            rows = []
+            for item in relationship_notes:
+                if isinstance(item, dict):
+                    rows.append({
+                        "인물/회사": item.get("person_or_company") or "",
+                        "구분": item.get("category") or "",
+                        "내용": item.get("content") or "",
+                        "활용 포인트": item.get("use_point") or "",
+                        "민감도": item.get("sensitivity") or "낮음",
+                    })
+            if rows:
+                st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
+
+            for idx, item in enumerate(relationship_notes):
+                if not isinstance(item, dict):
+                    continue
+                if st.button("고객 정보로 저장", key=f"save_relation_note_{sel_meeting.id}_{idx}"):
+                    _save_relationship_note(db, sel_meeting, item)
+                    st.toast("고객 관계 정보에 저장했습니다.", icon="✅")
+                    st.rerun()
+
+    with copy_tab:
+        st.subheader("카톡/문자 보고용")
+        st.text_area(
+            "복사해서 카톡/문자 보고에 붙여넣기",
+            value=compact_meeting_report(sel_meeting),
+            height=150,
+            key=f"kakao_report_enhanced_{sel_meeting.id}",
+        )
+
+    with raw_tab:
+        st.text_area("원문 회의록", sel_meeting.raw_text or "", height=420, disabled=True)
+
 
 def page_meeting_results():
     st.title("📋 미팅 요약 결과")
@@ -1288,6 +1580,8 @@ def page_meeting_results():
 
         a = sel_meeting.analysis
         company = sel_meeting.company
+        _render_enhanced_meeting_result(db, sel_meeting)
+        return
 
         # 헤더
         st.markdown(

@@ -24,3 +24,24 @@ SessionLocal = sessionmaker(
 
 def create_database() -> None:
     Base.metadata.create_all(_engine)
+    _ensure_meeting_analysis_columns()
+
+
+def _ensure_meeting_analysis_columns() -> None:
+    required_columns = {
+        "meeting_overview": "JSON",
+        "topic_discussions": "JSON",
+        "decisions": "JSON",
+        "action_items_structured": "JSON",
+        "risks_and_checks": "JSON",
+        "relationship_notes": "JSON",
+        "schedule_candidates": "JSON",
+    }
+    with _engine.begin() as conn:
+        existing = {
+            row[1]
+            for row in conn.exec_driver_sql("PRAGMA table_info(meeting_analyses)").fetchall()
+        }
+        for column_name, column_type in required_columns.items():
+            if column_name not in existing:
+                conn.exec_driver_sql(f"ALTER TABLE meeting_analyses ADD COLUMN {column_name} {column_type}")
