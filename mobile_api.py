@@ -160,6 +160,8 @@ class CustomerInfoPayload(BaseModel):
 app = FastAPI(title="Sales Intelligence Mobile Calendar")
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 app.mount("/workspace/static", StaticFiles(directory=WORKSPACE_DIR), name="workspace_static")
+app.mount("/mobile/static", StaticFiles(directory=STATIC_DIR), name="mobile_static")
+app.mount("/mobile/workspace/static", StaticFiles(directory=WORKSPACE_DIR), name="mobile_workspace_static")
 
 
 @app.on_event("startup")
@@ -172,13 +174,32 @@ def index():
     return FileResponse(STATIC_DIR / "index.html")
 
 
+@app.get("/mobile/")
+def mobile_index():
+    return FileResponse(STATIC_DIR / "index.html")
+
+
 @app.get("/workspace")
 def workspace_index():
     return FileResponse(WORKSPACE_DIR / "index.html")
 
 
+@app.get("/mobile/workspace")
+def mobile_workspace_index():
+    return FileResponse(WORKSPACE_DIR / "index.html")
+
+
 @app.get("/sw.js")
 def service_worker():
+    return FileResponse(
+        STATIC_DIR / "sw.js",
+        media_type="text/javascript",
+        headers={"Service-Worker-Allowed": "/mobile/"},
+    )
+
+
+@app.get("/mobile/sw.js")
+def mobile_service_worker():
     return FileResponse(
         STATIC_DIR / "sw.js",
         media_type="text/javascript",

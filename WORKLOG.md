@@ -350,3 +350,18 @@
   - `node --check workspace_app\app.js` 통과
 - 서버 반영:
   - 아직 하지 않음
+
+### 로컬 FastAPI 실행 호환성 보강
+
+- 상태: 완료
+- 변경 파일: `mobile_api.py`, `WORKLOG.md`
+- 구현 내용:
+  - 로컬 직접 실행에서도 서버와 같은 `/mobile/` URL로 접속할 수 있도록 alias 라우트 추가
+  - `/mobile/static`, `/mobile/workspace/static`, `/mobile/workspace`, `/mobile/sw.js` 경로 추가
+- 보존 사항:
+  - 기존 `/`, `/workspace`, `/static`, `/workspace/static` 경로 유지
+- 검증:
+  - `python -m py_compile mobile_api.py` 통과
+  - `ast.parse(..., feature_version=(3,10))` 통과
+- 서버 반영:
+  - 아직 하지 않음
