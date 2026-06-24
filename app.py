@@ -90,8 +90,77 @@ def _get_cookie_manager():
         return None
 
 
+def _get_query_auth_token() -> str:
+    try:
+        value = st.query_params.get("auth", "")
+        if isinstance(value, list):
+            return value[0] if value else ""
+        return str(value or "")
+    except Exception:
+        return ""
+
+
+def _clear_query_auth_token() -> None:
+    try:
+        if "auth" in st.query_params:
+            del st.query_params["auth"]
+    except Exception:
+        pass
+
+
+def _set_login_cookie(cookie_mgr, token: str) -> None:
+    if cookie_mgr is None or not token:
+        return
+    try:
+        cookie_mgr.set(
+            "sales_auth_token",
+            token,
+            expires_at=datetime.now() + timedelta(days=365),
+        )
+    except Exception:
+        pass
+
+
+def _auth_persistence_script(token: str = "", clear: bool = False) -> str:
+    if clear:
+        return """
+        <script>
+        try { window.parent.localStorage.removeItem("sales_auth_token"); } catch (e) {}
+        </script>
+        """
+    token_js = token.replace("\\", "\\\\").replace('"', '\\"')
+    return f"""
+    <script>
+    try {{
+      const token = "{token_js}";
+      if (token) window.parent.localStorage.setItem("sales_auth_token", token);
+    }} catch (e) {{}}
+    </script>
+    """
+
+
+def _local_storage_autologin_script() -> str:
+    return """
+    <script>
+    try {
+      const doc = window.parent.document;
+      const token = window.parent.localStorage.getItem("sales_auth_token");
+      const url = new URL(window.parent.location.href);
+      if (token && !url.searchParams.get("auth")) {
+        doc.body.style.opacity = "0.35";
+        url.searchParams.set("auth", token);
+        window.parent.location.replace(url.toString());
+      }
+    } catch (e) {}
+    </script>
+    """
+
+
 def require_login() -> None:
     if st.session_state.get("authenticated"):
+        persist_token = st.session_state.pop("persist_auth_token_once", "")
+        if persist_token:
+            components.html(_auth_persistence_script(persist_token), height=0, width=0)
         return
 
     configured = bool(_get_secret("APP_PASSWORD_HASH") or _get_secret("APP_PASSWORD"))
@@ -101,12 +170,29 @@ def require_login() -> None:
         st.error("로그인 비밀번호가 설정되지 않았습니다.")
         st.stop()
 
+    expected_token = _mobile_auth_token()
+
+    skip_local_storage_autologin = st.session_state.pop("clear_auth_storage_once", False)
+    if skip_local_storage_autologin:
+        components.html(_auth_persistence_script(clear=True), height=0, width=0)
+
+    # URL/localStorage fallback auto-login. Useful when component cookies are delayed or blocked.
+    query_token = _get_query_auth_token()
+    if not skip_local_storage_autologin and query_token and query_token == expected_token:
+        st.session_state["authenticated"] = True
+        st.session_state["auth_user"] = _get_secret("APP_USERNAME", "admin")
+        st.session_state["persist_auth_token_once"] = expected_token
+        _clear_query_auth_token()
+        cookie_mgr = _get_cookie_manager()
+        _set_login_cookie(cookie_mgr, expected_token)
+        st.rerun()
+
     # 쿠키로 자동 로그인 확인
     cookie_mgr = _get_cookie_manager()
     if cookie_mgr is not None:
         try:
             token_in_cookie = cookie_mgr.get("sales_auth_token")
-            if token_in_cookie and token_in_cookie == _mobile_auth_token():
+            if token_in_cookie and token_in_cookie == expected_token:
                 st.session_state["authenticated"] = True
                 st.session_state["auth_user"] = _get_secret("APP_USERNAME", "admin")
                 return
@@ -114,6 +200,8 @@ def require_login() -> None:
             pass
 
     st.title("Sales Intelligence")
+    if not skip_local_storage_autologin:
+        components.html(_local_storage_autologin_script(), height=0, width=0)
     with st.form("login_form"):
         username = st.text_input("아이디", value=_get_secret("APP_USERNAME", "admin"))
         password = st.text_input("비밀번호", type="password")
@@ -154,17 +242,8 @@ def require_login() -> None:
         if username_ok and _password_matches(password):
             st.session_state["authenticated"] = True
             st.session_state["auth_user"] = expected_username
-            # 쿠키에 토큰 저장 (30일)
-            if cookie_mgr is not None:
-                try:
-                    from datetime import timedelta
-                    cookie_mgr.set(
-                        "sales_auth_token",
-                        _mobile_auth_token(),
-                        expires_at=datetime.now() + timedelta(days=30),
-                    )
-                except Exception:
-                    pass
+            st.session_state["persist_auth_token_once"] = expected_token
+            _set_login_cookie(cookie_mgr, expected_token)
             st.rerun()
         else:
             st.error("아이디 또는 비밀번호가 올바르지 않습니다.")
@@ -2908,6 +2987,13 @@ with st.sidebar:
     if st.button("로그아웃", use_container_width=True):
         st.session_state["authenticated"] = False
         st.session_state.pop("auth_user", None)
+        st.session_state["clear_auth_storage_once"] = True
+        try:
+            cookie_mgr = _get_cookie_manager()
+            if cookie_mgr is not None:
+                cookie_mgr.delete("sales_auth_token")
+        except Exception:
+            pass
         st.rerun()
 
 if st.session_state.pop("collapse_sidebar_after_nav", False):
