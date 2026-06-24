@@ -6,6 +6,7 @@ Sales Intelligence System
 from __future__ import annotations
 
 import os
+import re
 import hashlib
 import hmac
 from calendar import monthcalendar, monthrange
@@ -520,36 +521,61 @@ def _as_list(value) -> list[str]:
 
 def _shorten(value: str, limit: int = 80) -> str:
     text = " ".join(str(value or "").split())
-    return text if len(text) <= limit else text[: limit - 1] + "…"
+    return text if len(text) <= limit else text[: limit - 3] + "..."
+
+
+def _clean_report_item(value: str) -> str:
+    text = " ".join(str(value or "").split())
+    text = re.sub(r"^[\-\*\u2022\s]*\d*[\.\)]?\s*", "", text)
+    return text.strip(" -:;,.")
+
+
+def _split_discussion_item(value: str) -> tuple[str, str]:
+    text = _clean_report_item(value)
+    if not text:
+        return "주요 논의", "회의 핵심 내용 정리"
+
+    for sep in ["：", ":", " - ", " – ", " — ", "|"]:
+        if sep in text:
+            topic, brief = text.split(sep, 1)
+            topic = _clean_report_item(topic)
+            brief = _clean_report_item(brief)
+            if topic and brief:
+                return _shorten(topic, 18), _shorten(brief, 48)
+
+    chunks = re.split(r"(?<=[.!?。])\s+|,\s+| 및 | 관련 ", text, maxsplit=1)
+    topic = _shorten(chunks[0], 18)
+    brief = _shorten(text, 48)
+    return topic or "주요 논의", brief or "회의 핵심 내용 정리"
+
+
+def _nominal_discussion_line(value: str) -> str:
+    topic, brief = _split_discussion_item(value)
+    brief = brief.rstrip(" .,!?:;")
+    nominal_endings = ("검토", "협의", "논의", "공유", "확인", "요청", "정리", "점검", "제안", "계획", "필요", "예정")
+    if not brief.endswith(nominal_endings):
+        brief = f"{brief} 관련 논의"
+    return f"- {topic}: {brief}"
 
 
 def compact_meeting_report(meeting: MeetingRecord) -> str:
     analysis = meeting.analysis
     company = meeting.company.name if meeting.company else "-"
     if not analysis:
-        return f"[미팅보고] {company}\n- 일자: {fmt_date(meeting.meeting_date)}\n- 분석 결과가 아직 없습니다."
+        return f"[미팅보고]\n업체: {company}\n일자: {fmt_date(meeting.meeting_date)}\n주요논의\n- 분석 결과 대기"
 
     key_points = _as_list(analysis.key_discussions)[:3]
-    needs = _as_list(analysis.customer_needs)[:2]
-    follow_ups = _as_list(analysis.follow_ups)[:3]
-    risks = _as_list(analysis.risk_factors)[:2]
-    opportunities = _as_list(analysis.sales_opportunities)[:2]
+    if not key_points:
+        fallback = analysis.one_line_summary or analysis.detailed_summary or "회의 핵심 내용 정리"
+        key_points = [fallback]
 
     lines = [
-        f"[미팅보고] {company} / {fmt_date(meeting.meeting_date)}",
-        f"1. 요약: {_shorten(analysis.one_line_summary or analysis.detailed_summary or '-', 110)}",
+        "[미팅보고]",
+        f"업체: {company}",
+        f"일자: {fmt_date(meeting.meeting_date)}",
+        "주요논의",
     ]
-    if key_points:
-        lines.append("2. 주요 논의: " + " / ".join(_shorten(x, 45) for x in key_points))
-    if needs:
-        lines.append("3. 고객 니즈: " + " / ".join(_shorten(x, 45) for x in needs))
-    if follow_ups:
-        lines.append("4. 후속조치: " + " / ".join(_shorten(x, 45) for x in follow_ups))
-    if risks:
-        lines.append("5. 리스크: " + " / ".join(_shorten(x, 45) for x in risks))
-    if opportunities:
-        lines.append("6. 기회: " + " / ".join(_shorten(x, 45) for x in opportunities))
-    lines.append(f"신뢰도 {analysis.trust_score}/100 · 위험도 {analysis.risk_score}/100")
+    lines.extend(_nominal_discussion_line(item) for item in key_points)
     return "\n".join(lines)
 
 
