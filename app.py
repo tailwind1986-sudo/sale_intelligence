@@ -527,55 +527,120 @@ def _shorten(value: str, limit: int = 80) -> str:
 def _clean_report_item(value: str) -> str:
     text = " ".join(str(value or "").split())
     text = re.sub(r"^[\-\*\u2022\s]*\d*[\.\)]?\s*", "", text)
-    return text.strip(" -:;,.")
+    return text.strip(" -:;,. ")
 
 
-def _split_discussion_item(value: str) -> tuple[str, str]:
+def _compact_join(parts: list[str]) -> str:
+    return " / ".join(_clean_report_item(part) for part in parts if _clean_report_item(part))
+
+
+def _schedule_flow_text(candidates: list) -> str:
+    bits = []
+    for item in candidates:
+        if not isinstance(item, dict):
+            continue
+        title = _clean_report_item(item.get("title") or item.get("project") or "\uc77c\uc815")
+        day = _clean_report_item(item.get("date") or "\ud655\uc778 \ud544\uc694")
+        note = _clean_report_item(item.get("note") or "")
+        if day != "\ud655\uc778 \ud544\uc694":
+            bits.append(f"{day} {title}")
+        elif note:
+            bits.append(f"{title} \uc77c\uc815 \ud655\uc778 \ud544\uc694")
+        if len(bits) >= 3:
+            break
+    return " \u2192 ".join(bits)
+
+
+def _discussion_topic_and_body(value: str) -> tuple[str, str]:
     text = _clean_report_item(value)
     if not text:
-        return "주요 논의", "회의 핵심 내용 정리"
+        return "\uc8fc\uc694 \ub17c\uc758", "\ud68c\uc758 \ud575\uc2ec \ub0b4\uc6a9 \uc815\ub9ac"
 
-    for sep in ["：", ":", " - ", " – ", " — ", "|"]:
+    for sep in ["\uff1a", ":", " - ", " \u2013 ", " \u2014 ", "|", " \uad00\ub828 "]:
         if sep in text:
-            topic, brief = text.split(sep, 1)
+            topic, body = text.split(sep, 1)
             topic = _clean_report_item(topic)
-            brief = _clean_report_item(brief)
-            if topic and brief:
-                return _shorten(topic, 18), _shorten(brief, 48)
+            body = _clean_report_item(body)
+            if topic and body:
+                return _shorten(topic, 18), _shorten(body, 92)
 
-    chunks = re.split(r"(?<=[.!?。])\s+|,\s+| 및 | 관련 ", text, maxsplit=1)
-    topic = _shorten(chunks[0], 18)
-    brief = _shorten(text, 48)
-    return topic or "주요 논의", brief or "회의 핵심 내용 정리"
+    topic = _shorten(text, 18)
+    return topic, _shorten(text, 92)
 
 
-def _nominal_discussion_line(value: str) -> str:
-    topic, brief = _split_discussion_item(value)
-    brief = brief.rstrip(" .,!?:;")
-    nominal_endings = ("검토", "협의", "논의", "공유", "확인", "요청", "정리", "점검", "제안", "계획", "필요", "예정")
-    if not brief.endswith(nominal_endings):
-        brief = f"{brief} 관련 논의"
-    return f"- {topic}: {brief}"
+def _build_kakao_discussions(analysis) -> list[str]:
+    key_points = _as_list(analysis.key_discussions)
+    schedule_flow = _schedule_flow_text(_json_list(getattr(analysis, "schedule_candidates", None)))
+    decisions = _as_list(getattr(analysis, "decisions", None))
+
+    lines = []
+    if key_points:
+        topic, body = _discussion_topic_and_body(key_points[0])
+        if schedule_flow and schedule_flow not in body:
+            body = f"{body}; {schedule_flow} \uc77c\uc815 \uac80\ud1a0"
+        lines.append(f"- {topic}: {_shorten(body, 125)}")
+        for item in key_points[1:3]:
+            topic, body = _discussion_topic_and_body(item)
+            lines.append(f"- {topic}: {_shorten(body, 100)}")
+    elif schedule_flow:
+        lines.append(f"- \uc77c\uc815 \uc9c4\ud589: {schedule_flow} \uc77c\uc815 \uac80\ud1a0")
+    else:
+        fallback = analysis.one_line_summary or analysis.detailed_summary or "\ud68c\uc758 \ud575\uc2ec \ub0b4\uc6a9 \uc815\ub9ac"
+        topic, body = _discussion_topic_and_body(fallback)
+        lines.append(f"- {topic}: {_shorten(body, 110)}")
+
+    if decisions:
+        decision_text = _compact_join(decisions[:2])
+        if decision_text:
+            lines.append(f"- \uacb0\uc815\uc0ac\ud56d: {_shorten(decision_text, 105)}")
+
+    return lines[:4]
+
+
+def _build_kakao_checks(analysis) -> list[str]:
+    checks = []
+    schedule_candidates = _json_list(getattr(analysis, "schedule_candidates", None))
+    for item in schedule_candidates:
+        if not isinstance(item, dict):
+            continue
+        title = _clean_report_item(item.get("title") or item.get("project") or "\uc77c\uc815")
+        note = str(item.get("note") or "")
+        if not item.get("date") or "\ud655\uc778 \ud544\uc694" in note:
+            checks.append(f"{title} \uc77c\uc815 \ud655\uc815")
+        elif item.get("confidence") in {"\ub0ae\uc74c", "\uc911\uac04"}:
+            checks.append(f"{title} \uc77c\uc815 \uc7ac\ud655\uc778")
+
+    checks.extend(_as_list(getattr(analysis, "pending_items", None)))
+    checks.extend(_as_list(getattr(analysis, "risks_and_checks", None))[:2])
+    checks.extend(_as_list(getattr(analysis, "risk_factors", None))[:1])
+
+    cleaned = []
+    seen = set()
+    for item in checks:
+        text = _shorten(_clean_report_item(item), 70)
+        if text and text not in seen:
+            cleaned.append(text)
+            seen.add(text)
+        if len(cleaned) >= 3:
+            break
+    return cleaned
 
 
 def compact_meeting_report(meeting: MeetingRecord) -> str:
     analysis = meeting.analysis
     company = meeting.company.name if meeting.company else "-"
+    meeting_date = fmt_date(meeting.meeting_date)
     if not analysis:
-        return f"[미팅보고]\n업체: {company}\n일자: {fmt_date(meeting.meeting_date)}\n주요논의\n- 분석 결과 대기"
+        return f"[\ubbf8\ud305\ubcf4\uace0] {company} / {meeting_date}\n\n\uc8fc\uc694\ub17c\uc758\n- \ubd84\uc11d \uacb0\uacfc \ub300\uae30"
 
-    key_points = _as_list(analysis.key_discussions)[:3]
-    if not key_points:
-        fallback = analysis.one_line_summary or analysis.detailed_summary or "회의 핵심 내용 정리"
-        key_points = [fallback]
+    lines = [f"[\ubbf8\ud305\ubcf4\uace0] {company} / {meeting_date}", "", "\uc8fc\uc694\ub17c\uc758"]
+    lines.extend(_build_kakao_discussions(analysis))
 
-    lines = [
-        "[미팅보고]",
-        f"업체: {company}",
-        f"일자: {fmt_date(meeting.meeting_date)}",
-        "주요논의",
-    ]
-    lines.extend(_nominal_discussion_line(item) for item in key_points)
+    checks = _build_kakao_checks(analysis)
+    if checks:
+        lines.extend(["", "\ud655\uc778\ud544\uc694"])
+        lines.extend(f"- {item}" for item in checks)
+
     return "\n".join(lines)
 
 
