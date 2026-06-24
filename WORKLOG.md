@@ -25,6 +25,24 @@
 - 서버 반영:
   - 아직 하지 않음
 
+### 4. 텔레그램 아침 브리핑
+
+- 상태: 완료
+- 변경 파일: `services/telegram_service.py`
+- 구현 내용:
+  - 기존 오늘 일정 요약을 `아침 브리핑` 형태로 확장
+  - 오늘 일정, 7일 내 마감 액션아이템, 7일 내 확인할 약속사항을 함께 전송
+  - 일정이 없어도 액션/약속이 있으면 브리핑 전송
+  - 텔레그램 HTML 메시지 깨짐 방지를 위해 고객사명/제목/내용 escape 처리
+- 보존 사항:
+  - 기존 `reminder_worker.py digest` 실행 경로와 `sales-digest.timer` 구조 유지
+  - 개별 일정 알림 `check_and_send_reminders()` 로직은 변경하지 않음
+- 검증:
+  - `python -m py_compile services\telegram_service.py reminder_worker.py` 통과
+  - `send_daily_digest` import 확인
+- 서버 반영:
+  - 아직 하지 않음
+
 ### 3. 고객사별 현재 상황 자동 요약
 
 - 상태: 완료

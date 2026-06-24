@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 from datetime import datetime, timedelta
+from html import escape
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
@@ -81,8 +82,8 @@ def send_message(text: str, chat_id: str | None = None) -> bool:
 
 
 def send_daily_digest(db) -> bool:
-    """오늘 일정이 있을 때만 아침 요약 메시지 전송. 전송 성공 시 True."""
-    from database.models import Schedule
+    """Send a morning briefing with today's schedule and near-term execution items."""
+    from database.models import ActionItem, Promise, Schedule
 
     token = _get_token()
     chat_id = _get_chat_id()
@@ -92,6 +93,7 @@ def send_daily_digest(db) -> bool:
     now = _local_now_naive()
     day_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
     day_end   = now.replace(hour=23, minute=59, second=59, microsecond=0)
+    deadline = now.date() + timedelta(days=7)
 
     schedules = (
         db.query(Schedule)
@@ -100,17 +102,65 @@ def send_daily_digest(db) -> bool:
         .all()
     )
 
-    if not schedules:
+    actions = (
+        db.query(ActionItem)
+        .filter(
+            ActionItem.status.in_(["예정", "진행중", "지연"]),
+            ActionItem.due_date != None,
+            ActionItem.due_date <= deadline,
+        )
+        .order_by(ActionItem.due_date)
+        .limit(10)
+        .all()
+    )
+
+    promises = (
+        db.query(Promise)
+        .filter(
+            Promise.status.in_(["미확인", "진행중", "지연"]),
+            Promise.due_date != None,
+            Promise.due_date <= deadline,
+        )
+        .order_by(Promise.due_date)
+        .limit(10)
+        .all()
+    )
+
+    if not schedules and not actions and not promises:
         return False
 
-    lines = [f"☀️ <b>{now.month}월 {now.day}일 오늘의 일정 ({len(schedules)}건)</b>\n"]
+    def _company_label(row) -> str:
+        return f" [{escape(row.company.name)}]" if getattr(row, "company", None) else ""
+
+    def _short(text: str | None, limit: int = 70) -> str:
+        value = (text or "").strip()
+        return escape(value[:limit] + ("…" if len(value) > limit else ""))
+
+    lines = [f"☀️ <b>{now.month}월 {now.day}일 아침 브리핑</b>"]
+
+    lines.append(f"\n<b>오늘 일정 ({len(schedules)}건)</b>")
     for s in schedules:
         if s.all_day:
             time_str = "종일"
         else:
             time_str = f"{s.start_dt.strftime('%H:%M')} ~ {s.end_dt.strftime('%H:%M')}"
-        company_str = f" [{s.company.name}]" if s.company else ""
-        lines.append(f"• {time_str}{company_str} {s.title}")
+        lines.append(f"• {time_str}{_company_label(s)} {_short(s.title)}")
+    if not schedules:
+        lines.append("• 오늘 등록된 일정 없음")
+
+    lines.append(f"\n<b>7일 내 액션 ({len(actions)}건)</b>")
+    for a in actions:
+        due = a.due_date.strftime("%m/%d") if a.due_date else "기한미정"
+        lines.append(f"• {due}{_company_label(a)} {_short(a.content)}")
+    if not actions:
+        lines.append("• 7일 내 마감 액션 없음")
+
+    lines.append(f"\n<b>미확인 약속 ({len(promises)}건)</b>")
+    for p in promises:
+        due = p.due_date.strftime("%m/%d") if p.due_date else "기한미정"
+        lines.append(f"• {due}{_company_label(p)} {_short(p.content)}")
+    if not promises:
+        lines.append("• 7일 내 확인할 약속 없음")
 
     return send_message("\n".join(lines), chat_id)
 
