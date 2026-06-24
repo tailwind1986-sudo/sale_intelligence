@@ -32,6 +32,11 @@
 | 2026-06-24 17:00 | `services/telegram_service.py` | 주간요약 포맷 개선 — 명사형 끝맺음, 들여쓰기, `📌이번주핵심 / 🏢고객사별현황 / ✅다음주액션` 구조로 변경. `send_daily_digest()` 아침 브리핑에 7일내 액션/미확인약속 항목 추가 |
 | 2026-06-24 17:00 | `app.py` | 미팅요약 결과 페이지 상단에 `📊 주간요약 텔레그램 발송` 버튼 추가 |
 | 2026-06-24 19:30 | `workspace_app/app.js` | `BASE` 변수 버그 수정 — `/mobile/workspace` 접속 시 API 경로가 `/mobile/api/...`로 잘못 조립되어 404 발생. API fetch는 절대경로(`/api/...`) 그대로 사용하고, 리다이렉트 전용 `NAV_BASE`로 분리 |
+| 2026-06-24 21:00 | `workspace_app/index.html`, `styles.css`, `app.js` | **UI 전면 리디자인** — 상단 탭 제거, ChatGPT 스타일 좌측 사이드바(아이콘+메뉴명, 섹션 구분) 적용. 모바일에서 햄버거 버튼 → 오버레이 드로어로 전환. 전체 색상/폰트/레이아웃 클린업 |
+| 2026-06-24 21:00 | `workspace_app/index.html`, `app.js` | **캘린더 탭 추가** — 사이드바에 "캘린더" 탭 추가, 클릭 시 `<iframe src="/mobile/">` 로 캘린더 앱을 workspace 안에 임베드. 캘린더 앱 전환 없이 한 화면에서 모든 기능 접근 가능 |
+| 2026-06-24 21:00 | `mobile_calendar/app.js` | 로그인 의존성 제거 시도 — `bootstrap()` 직접 호출(토큰 없어도 시도), 401 시 login 화면 대신 에러만 throw, 로그아웃 버튼에서 화면 전환 제거 |
+| 2026-06-24 21:00 | `mobile_calendar/sw.js` | 서비스워커 self-unregister로 교체 — 기존 캐시 전체 삭제 후 SW 스스로 해제. 이후 캘린더는 캐시 없이 항상 서버에서 직접 로드 |
+| 2026-06-24 21:00 | `mobile_calendar/app.js` | **캘린더 iframe 로그인 문제 미해결** — workspace에서 캘린더 탭 클릭 시 iframe 안에 로그인 화면이 뜨는 현상이 지속됨. 원인 미확인 (CODEX 인계) |
 
 ---
 
