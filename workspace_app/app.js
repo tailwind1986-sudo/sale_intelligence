@@ -1,5 +1,6 @@
 const NAV_BASE = location.pathname.startsWith("/mobile") ? "/mobile" : "";
-const token = localStorage.getItem("sales_mobile_token") || "";
+let token = localStorage.getItem("sales_mobile_token") || "";
+let eventsBound = false;
 
 const ACTION_STATUSES = ["전체", "예정", "진행중", "완료", "지연"];
 const PROMISE_STATUSES = ["전체", "미확인", "진행중", "완료", "지연", "불이행"];
@@ -37,8 +38,10 @@ async function api(path, options = {}) {
   if (token) headers.Authorization = `Bearer ${token}`;
   const res = await fetch(path, { ...options, headers });
   if (res.status === 401) {
-    location.href = `${NAV_BASE}/`;
-    return null;
+    localStorage.removeItem("sales_mobile_token");
+    token = "";
+    showWorkspaceLogin("로그인이 필요합니다.");
+    throw new Error("로그인이 필요합니다.");
   }
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
@@ -52,14 +55,57 @@ async function apiForm(path, formData) {
   if (token) headers.Authorization = `Bearer ${token}`;
   const res = await fetch(path, { method: "POST", headers, body: formData });
   if (res.status === 401) {
-    location.href = `${NAV_BASE}/`;
-    return null;
+    localStorage.removeItem("sales_mobile_token");
+    token = "";
+    showWorkspaceLogin("로그인이 필요합니다.");
+    throw new Error("로그인이 필요합니다.");
   }
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
     throw new Error(body.detail || "요청 처리에 실패했습니다.");
   }
   return res.json();
+}
+
+function showWorkspaceLogin(message = "") {
+  $("workspaceLogin").classList.remove("hidden");
+  document.querySelector(".app-layout").classList.add("hidden");
+  $("workspaceLoginError").textContent = message;
+  setTimeout(() => $("workspacePassword")?.focus(), 0);
+}
+
+function hideWorkspaceLogin() {
+  $("workspaceLogin").classList.add("hidden");
+  document.querySelector(".app-layout").classList.remove("hidden");
+  $("workspaceLoginError").textContent = "";
+}
+
+async function loginWorkspace(event) {
+  event.preventDefault();
+  $("workspaceLoginError").textContent = "";
+  const form = event.currentTarget;
+  try {
+    const res = await fetch("/api/login", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        username: form.username.value.trim(),
+        password: form.password.value,
+      }),
+    });
+    if (!res.ok) throw new Error("아이디 또는 비밀번호가 올바르지 않습니다.");
+    const data = await res.json();
+    token = data.token || "";
+    localStorage.setItem("sales_mobile_token", token);
+    hideWorkspaceLogin();
+    await load();
+  } catch (err) {
+    $("workspaceLoginError").textContent = err.message;
+  }
+}
+
+function bindWorkspaceLogin() {
+  $("workspaceLoginForm").onsubmit = loginWorkspace;
 }
 
 function todayIso() {
@@ -1021,6 +1067,7 @@ function bindEvents() {
 
 async function load() {
   try {
+    hideWorkspaceLogin();
     state.companies = await api("/api/companies") || [];
     renderActionFilters();
     renderCompanyFilters();
@@ -1028,12 +1075,18 @@ async function load() {
     $("uploadCompany").innerHTML = companyOptions("");
     $("riskCompany").innerHTML = companyOptions("");
     $("uploadForm").meeting_date.value = todayIso();
-    bindSidebar();
-    bindEvents();
+    if (!eventsBound) {
+      bindSidebar();
+      bindEvents();
+      eventsBound = true;
+    }
     await loadDashboard();
   } catch (err) {
-    $("error").textContent = err.message;
+    if (err.message !== "로그인이 필요합니다.") {
+      $("error").textContent = err.message;
+    }
   }
 }
 
+bindWorkspaceLogin();
 load();

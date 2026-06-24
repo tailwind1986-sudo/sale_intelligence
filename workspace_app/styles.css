@@ -740,3 +740,37 @@ textarea { min-height: 72px; resize: vertical; }
 
   .item { grid-template-columns: 60px minmax(0, 1fr); }
 }
+
+.workspace-login {
+  min-height: 100dvh;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: var(--bg);
+}
+
+.workspace-login-card {
+  width: min(420px, 100%);
+  display: grid;
+  gap: 10px;
+  padding: 24px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface);
+  box-shadow: 0 16px 40px rgba(15, 23, 42, 0.08);
+}
+
+.workspace-login-card h1 {
+  margin-bottom: 8px;
+  font-size: 28px;
+  letter-spacing: 0;
+}
+
+.workspace-login-card label {
+  color: var(--muted);
+  font-weight: 700;
+}
+
+.workspace-login-card button {
+  margin-top: 8px;
+}

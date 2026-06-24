@@ -8,6 +8,19 @@
   <link rel="stylesheet" href="/mobile/workspace/static/styles.css?v=20260624-ws2" />
 </head>
 <body>
+  <section id="workspaceLogin" class="workspace-login hidden">
+    <form id="workspaceLoginForm" class="workspace-login-card" autocomplete="on">
+      <p class="eyebrow">Sales Intelligence</p>
+      <h1>로그인</h1>
+      <label for="workspaceUsername">아이디</label>
+      <input id="workspaceUsername" name="username" value="admin" autocomplete="username" />
+      <label for="workspacePassword">비밀번호</label>
+      <input id="workspacePassword" name="password" type="password" autocomplete="current-password" />
+      <button type="submit" class="small-primary">로그인</button>
+      <p id="workspaceLoginError" class="error"></p>
+    </form>
+  </section>
+
   <div class="app-layout">
 
     <!-- ── 사이드바 ── -->
