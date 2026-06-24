@@ -13,7 +13,12 @@ except ModuleNotFoundError:  # Python 3.10
     import tomli as tomllib
 
 
+from dotenv import load_dotenv
+
 APP_DIR = Path(__file__).resolve().parents[1]
+
+load_dotenv(APP_DIR / ".env")
+load_dotenv()
 
 
 def _read_secret_file(path: Path) -> dict:
