@@ -3,19 +3,40 @@ from __future__ import annotations
 import json
 import os
 import re
+from pathlib import Path
 
-import streamlit as st
 from openai import OpenAI
+
+try:
+    import tomllib
+except ModuleNotFoundError:  # Python 3.10
+    import tomli as tomllib
+
+
+APP_DIR = Path(__file__).resolve().parents[1]
+
+
+def _read_secret_file(path: Path) -> dict:
+    if not path.exists():
+        return {}
+    try:
+        return tomllib.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
 
 
 def _get_api_key() -> str:
-    try:
-        key = st.secrets.get("OPENAI_API_KEY", "")
-        if key:
-            return key
-    except Exception:
-        pass
-    return os.getenv("OPENAI_API_KEY", "")
+    value = os.getenv("OPENAI_API_KEY", "")
+    if value:
+        return value
+    for path in (
+        APP_DIR / ".streamlit" / "secrets.toml",
+        Path.home() / ".streamlit" / "secrets.toml",
+    ):
+        data = _read_secret_file(path)
+        if data.get("OPENAI_API_KEY"):
+            return str(data["OPENAI_API_KEY"])
+    return ""
 
 
 _PROMPT_TEMPLATE = """당신은 TLD/CSO 영업 회의록을 업무 보고서, 실행 관리 문서, 고객 관계 관리 메모, 일정 관리 문서로 재구성하는 전문가입니다.

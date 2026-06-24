@@ -47,6 +47,21 @@ async function api(path, options = {}) {
   return res.json();
 }
 
+async function apiForm(path, formData) {
+  const headers = {};
+  if (token) headers.Authorization = `Bearer ${token}`;
+  const res = await fetch(`${BASE}${path}`, { method: "POST", headers, body: formData });
+  if (res.status === 401) {
+    location.href = `${BASE}/`;
+    return null;
+  }
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(body.detail || "요청 처리에 실패했습니다.");
+  }
+  return res.json();
+}
+
 function todayIso() {
   return new Date().toISOString().slice(0, 10);
 }
@@ -560,7 +575,10 @@ function renderMeetingDetail(m) {
     return `
       <div class="detail-head">
         <div><h3>${escapeHtml(m.company)}</h3><p>${escapeHtml(m.meeting_date || "-")}</p></div>
-        <button class="danger-btn" data-meeting-delete="${m.id}">삭제</button>
+        <div class="row-actions">
+          <button data-meeting-analyze="${m.id}">AI 분석</button>
+          <button class="danger-btn" data-meeting-delete="${m.id}">삭제</button>
+        </div>
       </div>
       <p class="empty">아직 AI 분석 결과가 없습니다. 업로드/AI 분석 단계에서 분석을 실행하세요.</p>
       <div class="detail-section"><h3>원문</h3><p class="meta">${escapeHtml((m.raw_text || "").slice(0, 600))}</p></div>
@@ -572,7 +590,11 @@ function renderMeetingDetail(m) {
         <h3>${escapeHtml(m.company)}</h3>
         <p>${escapeHtml([m.meeting_date, m.meeting_type, `신뢰 ${a.trust_score}`, `위험 ${a.risk_score}`].filter(Boolean).join(" · "))}</p>
       </div>
-      <button class="danger-btn" data-meeting-delete="${m.id}">삭제</button>
+      <div class="row-actions">
+        <button data-meeting-analyze="${m.id}">전체 재분석</button>
+        <button data-meeting-schedule-analyze="${m.id}">일정 재추출</button>
+        <button class="danger-btn" data-meeting-delete="${m.id}">삭제</button>
+      </div>
     </div>
     <p class="title">${escapeHtml(a.one_line_summary || "한 줄 결론 없음")}</p>
     <div class="detail-section"><h3>전체 요약</h3><p>${escapeHtml(a.detailed_summary || "-")}</p></div>
@@ -597,10 +619,39 @@ function renderMeetingDetail(m) {
   `;
 }
 
+function resetUploadForm() {
+  const form = $("uploadForm");
+  form.reset();
+  form.meeting_date.value = todayIso();
+  form.run_ai.checked = true;
+  $("uploadResult").innerHTML = "";
+}
+
+async function submitUpload(event) {
+  event.preventDefault();
+  const form = $("uploadForm");
+  const formData = new FormData(form);
+  formData.set("run_ai", form.run_ai.checked ? "true" : "false");
+  $("uploadResult").innerHTML = `<p class="empty">저장 중입니다. AI 분석을 실행하면 30초 이상 걸릴 수 있습니다.</p>`;
+  const result = await apiForm("/api/meetings/upload", formData);
+  if (!result) return;
+  if (result.ai_error) {
+    $("uploadResult").innerHTML = `<p class="error">회의록은 저장됐지만 AI 분석은 실패했습니다: ${escapeHtml(result.ai_error)}</p>`;
+  } else {
+    $("uploadResult").innerHTML = `<p class="notice">미팅 기록이 저장되었습니다.</p>`;
+  }
+  await loadMeetings();
+  setView("meetings");
+  if (result.id) await openMeeting(result.id);
+  resetUploadForm();
+  await loadDashboard();
+}
+
 async function refreshCompanyOptions() {
   state.companies = await api("/api/companies") || [];
   renderActionFilters();
   $("meetingCompany").innerHTML = companyOptions($("meetingCompany").value);
+  $("uploadCompany").innerHTML = companyOptions($("uploadCompany").value);
 }
 
 function setView(view) {
@@ -610,6 +661,7 @@ function setView(view) {
   $("viewCompanies").classList.toggle("hidden", view !== "companies");
   $("viewCandidates").classList.toggle("hidden", view !== "candidates");
   $("viewMeetings").classList.toggle("hidden", view !== "meetings");
+  $("viewUpload").classList.toggle("hidden", view !== "upload");
   for (const btn of document.querySelectorAll(".tabs button")) {
     btn.classList.toggle("active", btn.dataset.view === view);
   }
@@ -619,6 +671,7 @@ function setView(view) {
   }
   if (view === "companies") loadCompanies();
   if (view === "candidates") loadCandidates();
+  if (view === "upload") resetUploadForm();
   if (view === "meetings") loadMeetings();
 }
 
@@ -650,6 +703,8 @@ function bindEvents() {
     clearTimeout(window.__meetingSearchTimer);
     window.__meetingSearchTimer = setTimeout(loadMeetings, 250);
   };
+  $("uploadForm").onsubmit = submitUpload;
+  $("clearUploadBtn").onclick = resetUploadForm;
   document.addEventListener("click", async event => {
     const target = event.target;
     if (target.matches("[data-cancel-form]")) target.closest("form").classList.add("hidden");
@@ -713,6 +768,19 @@ function bindEvents() {
       await api(`/api/meetings/${state.selectedMeeting.id}/relationship-notes/${relationSave}/save`, { method: "POST" });
       alert("고객 정보로 저장했습니다.");
     }
+    const meetingAnalyze = target.dataset.meetingAnalyze;
+    if (meetingAnalyze && confirm("이 미팅 기록을 전체 재분석할까요? 기존에 직접 수정한 액션/약속은 유지됩니다.")) {
+      await api(`/api/meetings/${meetingAnalyze}/analyze`, { method: "POST" });
+      await openMeeting(meetingAnalyze);
+      await loadMeetings();
+      await loadCandidates();
+    }
+    const meetingScheduleAnalyze = target.dataset.meetingScheduleAnalyze;
+    if (meetingScheduleAnalyze && confirm("이 미팅 기록에서 일정 후보만 다시 추출할까요?")) {
+      await api(`/api/meetings/${meetingScheduleAnalyze}/analyze?schedule_only=true`, { method: "POST" });
+      await openMeeting(meetingScheduleAnalyze);
+      await loadCandidates();
+    }
     const meetingDelete = target.dataset.meetingDelete;
     if (meetingDelete && confirm("이 미팅 기록을 삭제할까요? 분석/약속/액션도 함께 삭제됩니다.")) {
       await api(`/api/meetings/${meetingDelete}`, { method: "DELETE" });
@@ -765,6 +833,8 @@ async function load() {
     renderActionFilters();
     renderCompanyFilters();
     $("meetingCompany").innerHTML = companyOptions("");
+    $("uploadCompany").innerHTML = companyOptions("");
+    $("uploadForm").meeting_date.value = todayIso();
     bindEvents();
     await loadDashboard();
   } catch (err) {

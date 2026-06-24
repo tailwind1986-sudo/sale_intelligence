@@ -12,7 +12,7 @@ try:
 except ModuleNotFoundError:  # Python 3.10 server runtime
     import tomli as tomllib
 
-from fastapi import Depends, FastAPI, Header, HTTPException
+from fastapi import Depends, FastAPI, File, Form, Header, HTTPException, UploadFile
 from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
 from dotenv import load_dotenv
@@ -24,6 +24,7 @@ load_dotenv()
 
 from database.db import SessionLocal, create_database
 from database.models import ActionItem, Company, Contact, CustomerInfo, MeetingAnalysis, MeetingRecord, Promise, Schedule
+from services.ai_analyzer import analyze_meeting_transcript
 
 
 APP_DIR = Path(__file__).parent
@@ -601,6 +602,181 @@ def _update_schedule_candidate_state(meeting: MeetingRecord, index: int, **updat
     flag_modified(analysis, "schedule_candidates")
 
 
+ANALYSIS_JSON_FIELDS = [
+    "meeting_overview",
+    "topic_discussions",
+    "key_discussions",
+    "decisions",
+    "customer_needs",
+    "complaints",
+    "price_mentions",
+    "competitor_mentions",
+    "promises_raw",
+    "follow_ups",
+    "action_items_structured",
+    "pending_items",
+    "risk_factors",
+    "risks_and_checks",
+    "next_meeting_questions",
+    "sales_opportunities",
+    "relationship_notes",
+    "schedule_candidates",
+]
+
+
+def _date_from_ai(value):
+    if not value:
+        return None
+    try:
+        return datetime.strptime(str(value)[:10], "%Y-%m-%d").date()
+    except Exception:
+        return None
+
+
+def _add_generated_items(db: Session, record: MeetingRecord, result: dict) -> None:
+    for p in result.get("promises", []) or []:
+        if not isinstance(p, dict) or not p.get("content"):
+            continue
+        db.add(Promise(
+            meeting_id=record.id,
+            company_id=record.company_id,
+            content=p.get("content", ""),
+            promised_by=p.get("promised_by"),
+            promised_date=record.meeting_date,
+            due_date=_date_from_ai(p.get("due_date")),
+            status="미확인",
+        ))
+
+    structured_actions = result.get("action_items_structured") or []
+    if structured_actions:
+        for item in structured_actions:
+            if not isinstance(item, dict):
+                continue
+            content = item.get("task") or item.get("content") or ""
+            if not content:
+                continue
+            assignee = item.get("assignee")
+            db.add(ActionItem(
+                meeting_id=record.id,
+                company_id=record.company_id,
+                content=content,
+                assignee=assignee if assignee and assignee != "확인 필요" else None,
+                due_date=_date_from_ai(item.get("due_date")),
+                status="예정",
+                notes=item.get("note"),
+            ))
+    else:
+        for follow_up in result.get("follow_ups", []) or []:
+            text = str(follow_up).strip()
+            if not text:
+                continue
+            db.add(ActionItem(
+                meeting_id=record.id,
+                company_id=record.company_id,
+                content=text,
+                status="예정",
+            ))
+
+
+def _analysis_from_result(record: MeetingRecord, result: dict) -> MeetingAnalysis:
+    return MeetingAnalysis(
+        meeting_id=record.id,
+        one_line_summary=result.get("one_line_summary"),
+        detailed_summary=result.get("detailed_summary"),
+        meeting_overview=result.get("meeting_overview", {}),
+        topic_discussions=result.get("topic_discussions", []),
+        key_discussions=result.get("key_discussions", []),
+        decisions=result.get("decisions", []),
+        customer_needs=result.get("customer_needs", []),
+        complaints=result.get("complaints", []),
+        price_mentions=result.get("price_mentions", []),
+        competitor_mentions=result.get("competitor_mentions", []),
+        promises_raw=result.get("promises", []),
+        follow_ups=result.get("follow_ups", []),
+        action_items_structured=result.get("action_items_structured", []),
+        pending_items=result.get("pending_items", []),
+        risk_factors=result.get("risk_factors", []),
+        risks_and_checks=result.get("risks_and_checks", []),
+        next_meeting_questions=result.get("next_meeting_questions", []),
+        sales_opportunities=result.get("sales_opportunities", []),
+        relationship_notes=result.get("relationship_notes", []),
+        schedule_candidates=result.get("schedule_candidates", []),
+        trust_score=result.get("trust_score", 50),
+        risk_score=result.get("risk_score", 50),
+    )
+
+
+def _save_meeting_analysis(db: Session, record: MeetingRecord, result: dict) -> None:
+    db.add(_analysis_from_result(record, result))
+    _add_generated_items(db, record, result)
+    db.commit()
+
+
+def _update_meeting_analysis(analysis: MeetingAnalysis, result: dict, *, schedule_only: bool = False) -> None:
+    if schedule_only:
+        existing = _json_list(analysis.schedule_candidates)
+        state_by_key = {
+            (item.get("date"), item.get("title")): {
+                key: item.get(key)
+                for key in ("saved", "ignored")
+                if item.get(key) is not None
+            }
+            for item in existing
+            if isinstance(item, dict)
+        }
+        analysis.schedule_candidates = [
+            {**item, **state_by_key.get((item.get("date"), item.get("title")), {})}
+            for item in (result.get("schedule_candidates") or [])
+            if isinstance(item, dict)
+        ]
+        flag_modified(analysis, "schedule_candidates")
+        return
+
+    analysis.one_line_summary = result.get("one_line_summary")
+    analysis.detailed_summary = result.get("detailed_summary")
+    analysis.meeting_overview = result.get("meeting_overview", {})
+    analysis.topic_discussions = result.get("topic_discussions", [])
+    analysis.key_discussions = result.get("key_discussions", [])
+    analysis.decisions = result.get("decisions", [])
+    analysis.customer_needs = result.get("customer_needs", [])
+    analysis.complaints = result.get("complaints", [])
+    analysis.price_mentions = result.get("price_mentions", [])
+    analysis.competitor_mentions = result.get("competitor_mentions", [])
+    analysis.promises_raw = result.get("promises", [])
+    analysis.follow_ups = result.get("follow_ups", [])
+    analysis.action_items_structured = result.get("action_items_structured", [])
+    analysis.pending_items = result.get("pending_items", [])
+    analysis.risk_factors = result.get("risk_factors", [])
+    analysis.risks_and_checks = result.get("risks_and_checks", [])
+    analysis.next_meeting_questions = result.get("next_meeting_questions", [])
+    analysis.sales_opportunities = result.get("sales_opportunities", [])
+    analysis.relationship_notes = result.get("relationship_notes", [])
+    analysis.schedule_candidates = result.get("schedule_candidates", [])
+    analysis.trust_score = result.get("trust_score", 50)
+    analysis.risk_score = result.get("risk_score", 50)
+    for field in ANALYSIS_JSON_FIELDS:
+        flag_modified(analysis, field)
+
+
+def _analyze_record(db: Session, record: MeetingRecord, *, schedule_only: bool = False) -> None:
+    if not record.raw_text or not record.raw_text.strip():
+        raise HTTPException(status_code=400, detail="분석할 회의록 원문이 없습니다.")
+    prev = (
+        db.query(MeetingRecord)
+        .options(joinedload(MeetingRecord.analysis))
+        .filter(MeetingRecord.company_id == record.company_id, MeetingRecord.id != record.id)
+        .order_by(MeetingRecord.meeting_date.desc(), MeetingRecord.created_at.desc())
+        .limit(3)
+        .all()
+    )
+    result = analyze_meeting_transcript(record.raw_text, prev_meetings=prev)
+    if record.analysis:
+        _update_meeting_analysis(record.analysis, result, schedule_only=schedule_only)
+        db.commit()
+    else:
+        _save_meeting_analysis(db, record, result)
+
+
 @app.get("/api/dashboard", dependencies=[Depends(_require_auth)])
 def dashboard(db: Session = Depends(get_db)):
     now = datetime.now()
@@ -939,6 +1115,78 @@ def list_meeting_results(q: str = "", company_id: int | None = None, db: Session
         }
         for m in rows
     ]
+
+
+@app.post("/api/meetings/upload", dependencies=[Depends(_require_auth)])
+async def upload_meeting_record(
+    company_id: int = Form(...),
+    meeting_date: date = Form(...),
+    meeting_type: str = Form("방문"),
+    attendees: str = Form(""),
+    memo: str = Form(""),
+    transcript: str = Form(""),
+    run_ai: bool = Form(True),
+    file: UploadFile | None = File(default=None),
+    db: Session = Depends(get_db),
+):
+    company = db.get(Company, company_id)
+    if not company:
+        raise HTTPException(status_code=404, detail="Company not found")
+
+    raw_text = transcript.strip()
+    file_name = ""
+    if file and file.filename:
+        body = await file.read()
+        file_name = file.filename
+        for encoding in ("utf-8-sig", "utf-8", "cp949"):
+            try:
+                raw_text = body.decode(encoding).strip()
+                break
+            except UnicodeDecodeError:
+                continue
+    if not raw_text:
+        raise HTTPException(status_code=400, detail="전사 텍스트가 없습니다.")
+
+    record = MeetingRecord(
+        company_id=company_id,
+        meeting_date=meeting_date,
+        meeting_type=meeting_type or "방문",
+        attendees=attendees.strip() or None,
+        raw_text=raw_text,
+        file_name=file_name or None,
+        memo=memo.strip() or None,
+    )
+    db.add(record)
+    db.commit()
+    db.refresh(record)
+
+    ai_error = ""
+    if run_ai:
+        try:
+            _analyze_record(db, record)
+            db.refresh(record)
+        except Exception as exc:
+            ai_error = str(exc)
+    return {
+        "ok": True,
+        "id": record.id,
+        "has_analysis": bool(record.analysis),
+        "ai_error": ai_error,
+    }
+
+
+@app.post("/api/meetings/{meeting_id}/analyze", dependencies=[Depends(_require_auth)])
+def analyze_existing_meeting(meeting_id: int, schedule_only: bool = False, db: Session = Depends(get_db)):
+    meeting = (
+        db.query(MeetingRecord)
+        .options(joinedload(MeetingRecord.analysis))
+        .filter(MeetingRecord.id == meeting_id)
+        .first()
+    )
+    if not meeting:
+        raise HTTPException(status_code=404, detail="Meeting not found")
+    _analyze_record(db, meeting, schedule_only=schedule_only)
+    return {"ok": True}
 
 
 @app.get("/api/meetings/{meeting_id}", dependencies=[Depends(_require_auth)])

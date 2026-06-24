@@ -22,6 +22,7 @@
       <button data-view="actions">액션/약속</button>
       <button data-view="companies">고객사</button>
       <button data-view="candidates">일정 후보</button>
+      <button data-view="upload">미팅 업로드</button>
       <button data-view="meetings">미팅요약</button>
     </nav>
 
@@ -133,6 +134,37 @@
           <div id="meetingList" class="list"></div>
           <div id="meetingDetail" class="detail-box"></div>
         </div>
+      </section>
+    </section>
+
+    <section id="viewUpload" class="view hidden">
+      <section class="panel">
+        <div class="panel-head">
+          <h2>미팅 업로드 / AI 분석</h2>
+        </div>
+        <form id="uploadForm" class="upload-form">
+          <select name="company_id" id="uploadCompany" required></select>
+          <input name="meeting_date" type="date" required />
+          <select name="meeting_type">
+            <option value="방문">방문</option>
+            <option value="전화">전화</option>
+            <option value="온라인">온라인</option>
+            <option value="기타">기타</option>
+          </select>
+          <input name="attendees" placeholder="참석자" />
+          <input name="file" type="file" accept=".txt,text/plain" />
+          <textarea name="transcript" class="wide-field" placeholder="TXT 파일을 올리거나 회의록 원문을 직접 붙여넣으세요."></textarea>
+          <textarea name="memo" class="wide-field" placeholder="메모 / 특이사항"></textarea>
+          <label class="check">
+            <input name="run_ai" type="checkbox" checked />
+            저장 후 AI 분석 실행
+          </label>
+          <div class="form-actions">
+            <button type="submit" class="small-primary">저장 및 분석</button>
+            <button type="button" id="clearUploadBtn">초기화</button>
+          </div>
+        </form>
+        <div id="uploadResult" class="notice"></div>
       </section>
     </section>
 

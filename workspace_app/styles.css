@@ -341,6 +341,23 @@ textarea {
   background: #fbfcfd;
 }
 
+.upload-form {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.wide-field {
+  grid-column: 1 / -1;
+  min-height: 140px;
+}
+
+.notice {
+  margin-top: 12px;
+  color: #047857;
+  font-weight: 800;
+}
+
 .candidate-card {
   display: grid;
   gap: 8px;
@@ -423,10 +440,11 @@ textarea {
 
   .filters,
   .edit-form,
-  .manage-row,
-  .split,
-  .inline-form,
-  .two-cols {
+    .manage-row,
+    .split,
+    .inline-form,
+    .upload-form,
+    .two-cols {
     grid-template-columns: 1fr;
   }
 

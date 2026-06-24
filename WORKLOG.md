@@ -265,3 +265,34 @@
   - `node --check workspace_app\app.js` 통과
 - 서버 반영:
   - 아직 하지 않음
+
+### Streamlit 제거 6단계. 미팅 업로드 / AI 분석
+
+- 상태: 완료
+- 변경 파일: `mobile_api.py`, `services/ai_analyzer.py`, `workspace_app/index.html`, `workspace_app/app.js`, `workspace_app/styles.css`, `requirements.txt`
+- 구현 내용:
+  - `/mobile/api/meetings/upload` API 추가
+  - TXT 파일 업로드 또는 직접 입력으로 `MeetingRecord` 저장
+  - 저장 후 선택적으로 OpenAI 회의록 분석 실행
+  - 신규 분석 결과를 `MeetingAnalysis`, `Promise`, `ActionItem`에 기존 구조대로 저장
+  - `/mobile/api/meetings/{meeting_id}/analyze` 재분석 API 추가
+  - 전체 재분석과 일정 후보만 재추출 모드 지원
+  - workspace에 `미팅 업로드` 탭과 업로드/분석 폼 추가
+  - 미팅 요약 상세 화면에 `AI 분석`, `전체 재분석`, `일정 재추출` 버튼 추가
+  - `services.ai_analyzer`의 직접 Streamlit import 제거
+  - 파일 업로드 Form 처리를 위해 `python-multipart` 의존성 추가
+- 빠진 기능 검증:
+  - 기존 Streamlit 업로드의 고객사, 미팅일자, 유형, 참석자, 메모, 원문 저장, AI 자동 분석 흐름 대응
+  - 기존 재분석의 전체 재분석 / 일정 후보 재추출 흐름 대응
+  - 재분석 시 사용자가 이미 수정했을 수 있는 액션/약속은 자동 삭제하거나 재생성하지 않음
+- 보존 사항:
+  - 기존 Streamlit 업로드/요약 화면 유지
+  - 기존 DB 스키마 변경 없음
+  - `.env`와 `.streamlit/secrets.toml` 기반 OpenAI 키 로딩 유지
+- 검증:
+  - `python -m py_compile mobile_api.py services\ai_analyzer.py` 통과
+  - `ast.parse(..., feature_version=(3,10))` 통과
+  - `node --check workspace_app\app.js` 통과
+  - 로컬 기본 Python에는 FastAPI가 없어 `import mobile_api` 런타임 검증은 8단계 후 의존성 설치/로컬 실행 때 확인 예정
+- 서버 반영:
+  - 아직 하지 않음
