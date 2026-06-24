@@ -682,11 +682,135 @@ INFO_CATEGORIES = ["생일", "취향", "가족사항", "주요이슈", "알레�
 
 # ─── 대시보드 ──────────────────────────────────────────────────────────────────
 
+
+def _render_execution_dashboard(db) -> None:
+    today = date.today()
+    week_end = today + timedelta(days=7)
+    now = datetime.now()
+    day_start = datetime.combine(today, datetime.min.time())
+    day_end = datetime.combine(today, datetime.max.time())
+    week_end_dt = datetime.combine(week_end, datetime.max.time())
+
+    today_schedules = (
+        db.query(Schedule)
+        .options(joinedload(Schedule.company))
+        .filter(Schedule.start_dt <= day_end, Schedule.end_dt >= day_start)
+        .order_by(Schedule.all_day.desc(), Schedule.start_dt)
+        .all()
+    )
+    week_schedules = (
+        db.query(Schedule)
+        .options(joinedload(Schedule.company))
+        .filter(Schedule.start_dt >= now, Schedule.start_dt <= week_end_dt)
+        .order_by(Schedule.start_dt)
+        .limit(12)
+        .all()
+    )
+    open_actions = (
+        db.query(ActionItem)
+        .options(joinedload(ActionItem.company))
+        .filter(or_(ActionItem.status.is_(None), ActionItem.status.notin_(["\uc644\ub8cc"])))
+        .order_by(ActionItem.due_date.is_(None), ActionItem.due_date)
+        .limit(20)
+        .all()
+    )
+    due_actions = [
+        item for item in open_actions
+        if item.due_date and item.due_date <= week_end
+    ][:8]
+    open_promises = (
+        db.query(Promise)
+        .options(joinedload(Promise.company))
+        .filter(or_(Promise.status.is_(None), Promise.status.notin_(["\uc644\ub8cc", "\ubd88\uc774\ud589"])))
+        .order_by(Promise.due_date.is_(None), Promise.due_date)
+        .limit(8)
+        .all()
+    )
+    recent_analyses = (
+        db.query(MeetingRecord)
+        .options(joinedload(MeetingRecord.company), joinedload(MeetingRecord.analysis))
+        .filter(MeetingRecord.analysis.has())
+        .order_by(desc(MeetingRecord.meeting_date), desc(MeetingRecord.created_at))
+        .limit(12)
+        .all()
+    )
+
+    checks: list[dict[str, str]] = []
+    for meeting in recent_analyses:
+        analysis = meeting.analysis
+        items = []
+        items.extend(_as_list(getattr(analysis, "risks_and_checks", None))[:2])
+        items.extend(_as_list(getattr(analysis, "pending_items", None))[:2])
+        for text in items:
+            checks.append({
+                "\uace0\uac1d\uc0ac": meeting.company.name if meeting.company else "-",
+                "\ud68c\uc758\uc77c": fmt_date(meeting.meeting_date),
+                "\ud655\uc778\ud544\uc694": _shorten(text, 80),
+            })
+            if len(checks) >= 6:
+                break
+        if len(checks) >= 6:
+            break
+
+    st.markdown('<div class="section-title">\uc624\ub298/\uc774\ubc88 \uc8fc \uc2e4\ud589 \ubcf4\ub4dc</div>', unsafe_allow_html=True)
+    k1, k2, k3, k4 = st.columns(4)
+    k1.metric("\uc624\ub298 \uc77c\uc815", f"{len(today_schedules)}\uac74")
+    k2.metric("7\uc77c \ub0b4 \uc77c\uc815", f"{len(week_schedules)}\uac74")
+    k3.metric("\ub9c8\uac10/\uc9c0\uc5f0 \uc561\uc158", f"{len(due_actions)}\uac74")
+    k4.metric("\ubbf8\ud655\uc778 \uc57d\uc18d", f"{len(open_promises)}\uac74")
+
+    c1, c2 = st.columns(2)
+    with c1:
+        st.markdown("**\uc624\ub298 \uc77c\uc815**")
+        if today_schedules:
+            for sched in today_schedules[:6]:
+                time_text = "\uc885\uc77c" if sched.all_day else f"{sched.start_dt.strftime('%H:%M')}~{sched.end_dt.strftime('%H:%M')}"
+                company = f" [{sched.company.name}]" if sched.company else ""
+                st.write(f"- `{time_text}`{company} {sched.title}")
+        else:
+            st.caption("\uc624\ub298 \ub4f1\ub85d\ub41c \uc77c\uc815\uc774 \uc5c6\uc2b5\ub2c8\ub2e4.")
+
+        st.markdown("**\uc774\ubc88 \uc8fc \uc77c\uc815**")
+        if week_schedules:
+            for sched in week_schedules[:6]:
+                company = f" [{sched.company.name}]" if sched.company else ""
+                st.write(f"- `{fmt_date(sched.start_dt.date())}`{company} {sched.title}")
+        else:
+            st.caption("\ub2e4\uac00\uc624\ub294 7\uc77c \ub0b4 \uc77c\uc815\uc774 \uc5c6\uc2b5\ub2c8\ub2e4.")
+
+    with c2:
+        st.markdown("**\ub9c8\uac10/\uc9c0\uc5f0 \uc561\uc158\uc544\uc774\ud15c**")
+        if due_actions:
+            for item in due_actions:
+                company = item.company.name if item.company else "-"
+                marker = "\uc9c0\uc5f0" if item.due_date and item.due_date < today else "\ub9c8\uac10"
+                st.write(f"- `{marker} {fmt_date(item.due_date)}` [{company}] {_shorten(item.content, 70)}")
+        else:
+            st.caption("7\uc77c \ub0b4 \ub9c8\uac10 \uc561\uc158\uc544\uc774\ud15c\uc774 \uc5c6\uc2b5\ub2c8\ub2e4.")
+
+        st.markdown("**\ubbf8\ud655\uc778 \uc57d\uc18d\uc0ac\ud56d**")
+        if open_promises:
+            for promise in open_promises[:6]:
+                company = promise.company.name if promise.company else "-"
+                st.write(f"- `{fmt_date(promise.due_date)}` [{company}] {_shorten(promise.content, 70)}")
+        else:
+            st.caption("\ubbf8\ud655\uc778 \uc57d\uc18d\uc0ac\ud56d\uc774 \uc5c6\uc2b5\ub2c8\ub2e4.")
+
+    st.markdown("**AI \ud655\uc778 \ud544\uc694\uc0ac\ud56d**")
+    if checks:
+        st.dataframe(pd.DataFrame(checks), use_container_width=True, hide_index=True)
+    else:
+        st.caption("\ucd5c\uadfc \ud68c\uc758\ub85d\uc5d0\uc11c \ucd94\ucd9c\ub41c \ud655\uc778 \ud544\uc694\uc0ac\ud56d\uc774 \uc5c6\uc2b5\ub2c8\ub2e4.")
+
+
 def page_dashboard():
     st.title("🏠 대시보드")
 
     db = get_db()
     try:
+        _render_execution_dashboard(db)
+        st.divider()
+
         total_companies = db.query(func.count(Company.id)).scalar() or 0
         total_meetings  = db.query(func.count(MeetingRecord.id)).scalar() or 0
         open_actions    = db.query(func.count(ActionItem.id)).filter(
