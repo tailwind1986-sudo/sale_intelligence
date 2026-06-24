@@ -158,27 +158,34 @@ def send_weekly_summary(db) -> bool:
         print("Weekly summary skipped: no meetings this week")
         return False
 
-    # GPT에 넘길 미팅 내용 구성
+    # GPT에 넘길 미팅 내용 구성 (구조화 데이터 우선 활용)
     meeting_texts = []
     for m in meetings:
         date_str = m.meeting_date.strftime("%m/%d") if m.meeting_date else "날짜미상"
         company  = m.company.name if m.company else "미상"
         parts = [f"[{date_str}] {company}"]
-        if m.analysis:
-            if m.analysis.one_line_summary:
-                parts.append(f"요약: {m.analysis.one_line_summary}")
-            if m.analysis.key_discussions:
-                items = m.analysis.key_discussions
+        a = m.analysis
+        if a:
+            if a.one_line_summary:
+                parts.append(f"요약: {a.one_line_summary}")
+            if a.detailed_summary:
+                parts.append(f"상세: {a.detailed_summary[:200]}")
+            for label, field in [("핵심논의", a.key_discussions), ("결정사항", getattr(a, "decisions", None)),
+                                  ("고객니즈", a.customer_needs), ("후속조치", a.follow_ups),
+                                  ("리스크", a.risk_factors)]:
+                if isinstance(field, list) and field:
+                    parts.append(f"{label}: " + " / ".join(str(i) for i in field[:2]))
+            if getattr(a, "action_items_structured", None):
+                items = a.action_items_structured
                 if isinstance(items, list):
-                    parts.append("핵심논의: " + " / ".join(str(i) for i in items[:3]))
-            if m.analysis.customer_needs:
-                items = m.analysis.customer_needs
-                if isinstance(items, list):
-                    parts.append("고객니즈: " + " / ".join(str(i) for i in items[:2]))
-            if m.analysis.follow_ups:
-                items = m.analysis.follow_ups
-                if isinstance(items, list):
-                    parts.append("후속조치: " + " / ".join(str(i) for i in items[:2]))
+                    action_strs = []
+                    for item in items[:3]:
+                        if isinstance(item, dict):
+                            task = item.get("task", "")
+                            due = item.get("due_date", "")
+                            action_strs.append(f"{task}({due})" if due else task)
+                    if action_strs:
+                        parts.append("액션: " + " / ".join(action_strs))
         elif m.raw_text:
             parts.append(m.raw_text[:300])
         meeting_texts.append("\n".join(parts))

@@ -1219,7 +1219,18 @@ def page_meeting_upload():
                 if run_ai:
                     with st.spinner("🤖 AI 분석 중… (30초~1분 소요)"):
                         try:
-                            result = analyze_meeting_transcript(raw_text)
+                            prev = (
+                                db.query(MeetingRecord)
+                                .options(joinedload(MeetingRecord.analysis))
+                                .filter(
+                                    MeetingRecord.company_id == sel_company.id,
+                                    MeetingRecord.id != record.id,
+                                )
+                                .order_by(desc(MeetingRecord.meeting_date))
+                                .limit(3)
+                                .all()
+                            )
+                            result = analyze_meeting_transcript(raw_text, prev_meetings=prev)
                             _save_analysis(db, record, result)
                             st.toast("AI 분석 완료! '미팅 요약 결과' 메뉴에서 확인하세요.", icon="🎉")
                             st.session_state["last_meeting_id"] = record.id
@@ -1634,7 +1645,18 @@ def page_meeting_results():
             if st.button("🤖 AI 분석 실행"):
                 with st.spinner("분석 중…"):
                     try:
-                        result = analyze_meeting_transcript(sel_meeting.raw_text)
+                        prev = (
+                            db.query(MeetingRecord)
+                            .options(joinedload(MeetingRecord.analysis))
+                            .filter(
+                                MeetingRecord.company_id == sel_meeting.company_id,
+                                MeetingRecord.id != sel_meeting.id,
+                            )
+                            .order_by(desc(MeetingRecord.meeting_date))
+                            .limit(3)
+                            .all()
+                        )
+                        result = analyze_meeting_transcript(sel_meeting.raw_text, prev_meetings=prev)
                         _save_analysis(db, sel_meeting, result)
                         st.toast("분석 완료!", icon="🎉")
                         st.rerun()
@@ -3322,6 +3344,18 @@ def page_calendar():
                     st.toast(f"텔레그램 알림 {sent}건 전송됨", icon="📨")
                 else:
                     st.info("전송할 알림이 없습니다.")
+
+            st.divider()
+            st.markdown("**주간 요약 수동 발송**")
+            st.caption("이번 주 미팅 기록을 GPT-4o로 요약해 텔레그램으로 발송합니다.")
+            if st.button("📊 주간요약 지금 보내기", use_container_width=True):
+                from services.telegram_service import send_weekly_summary
+                with st.spinner("GPT-4o 요약 중…"):
+                    ok = send_weekly_summary(db)
+                if ok:
+                    st.toast("주간요약 전송 완료!", icon="📊")
+                else:
+                    st.warning("이번 주 미팅 기록이 없거나 전송에 실패했습니다.")
 
     finally:
         db.close()
