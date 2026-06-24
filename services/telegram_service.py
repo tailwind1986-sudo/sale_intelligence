@@ -134,15 +134,26 @@ def send_weekly_summary(db) -> bool:
     week_start = monday.replace(hour=0, minute=0, second=0, microsecond=0)
     week_end   = now.replace(hour=23, minute=59, second=59, microsecond=0)
 
+    from sqlalchemy import or_, cast, Date as SADate
     meetings = (
         db.query(MeetingRecord)
         .options(joinedload(MeetingRecord.company), joinedload(MeetingRecord.analysis))
-        .filter(MeetingRecord.meeting_date >= week_start.date(),
-                MeetingRecord.meeting_date <= week_end.date())
-        .order_by(MeetingRecord.meeting_date)
+        .filter(
+            or_(
+                # meeting_date 컬럼이 있는 경우
+                (MeetingRecord.meeting_date >= week_start.date()) &
+                (MeetingRecord.meeting_date <= week_end.date()),
+                # meeting_date 없으면 created_at 기준
+                (MeetingRecord.meeting_date == None) &
+                (MeetingRecord.created_at >= week_start) &
+                (MeetingRecord.created_at <= week_end),
+            )
+        )
+        .order_by(MeetingRecord.meeting_date, MeetingRecord.created_at)
         .all()
     )
 
+    print(f"Weekly summary: found {len(meetings)} meetings ({week_start.date()} ~ {week_end.date()})")
     if not meetings:
         print("Weekly summary skipped: no meetings this week")
         return False
