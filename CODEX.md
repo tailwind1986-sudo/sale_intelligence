@@ -23,6 +23,11 @@
 | 2026-06-24 | `deploy/oracle/sales-weekly.timer` | 매주 금요일 11:00 KST (02:00 UTC) 실행 systemd timer 추가 |
 | 2026-06-24 | `requirements.txt` | pg8000 제거 — Supabase 사용 중단, SQLite only |
 | 2026-06-24 | `deploy/oracle/backup.sh` | SQLite 자동 백업 스크립트 — 일별 7일 보관, 주별 4주 보관 |
+| 2026-06-24 | `database/db.py` | PostgreSQL/Supabase 코드 완전 제거 — `DATABASE_URL` 읽기, `_parse_pg_url()`, `_build_engine()` 삭제. SQLite 고정 연결(`data/sales_intelligence.db`)로 단순화 |
+| 2026-06-24 | `requirements.txt` | `extra-streamlit-components>=0.1.60` 추가 — 쿠키 기반 로그인 유지용 |
+| 2026-06-24 | `services/telegram_service.py` | `send_message()` timeout 10초 → 30초 (GPT 요약 후 발송 시 timeout 방지) |
+| 2026-06-24 | `app.py` | 쿠키 기반 로그인 유지 구현 — `_get_cookie_manager()` 추가, 로그인 성공 시 브라우저 쿠키에 토큰 저장(30일), 재접속 시 자동 로그인 |
+| 2026-06-24 | `app.py` | 일정 알림 기본값 변경 — 신규 일정 등록 시 알림 기본값 `하루 전` → `30분 전` |
 
 ---
 
@@ -107,24 +112,23 @@
 ### 3-1. 패키지 (requirements.txt)
 ```
 streamlit>=1.35.0
+extra-streamlit-components>=0.1.60
 sqlalchemy>=2.0.0
 pandas>=2.0.0
 python-dotenv>=1.0.0
 openai>=1.52.0
 openpyxl>=3.1.0
-pg8000>=1.30.0
 streamlit-calendar>=0.6.0
 requests>=2.28.0
+fastapi>=0.115.0
+uvicorn[standard]>=0.30.0
 ```
 
 ### 3-2. DB 연결 (database/db.py)
-- **SQLite** (로컬): `DATABASE_URL` 환경변수 없을 때 자동 사용
-- **Supabase PostgreSQL** (운영): `DATABASE_URL` 환경변수로 연결
-- **pg8000** 드라이버 사용 (Python 3.14 호환, pure Python)
-- URL 파서: `rfind('@')` 방식 (Python 3.14 urlparse가 `[`,`]` 포함 비밀번호에서 크래시)
-- `SA_URL.create()` 로 안전한 SQLAlchemy URL 구성
-- `pool_pre_ping=True`, `pool_recycle=300` (Supabase 연결 안정성)
-- `@st.cache_resource` 로 DB 세션 캐싱 (성능 최적화)
+- **SQLite 전용** — `sqlite:////home/ubuntu/app/data/sales_intelligence.db`
+- `DATABASE_URL` 환경변수 미사용 (Supabase 완전 제거)
+- `connect_args={"check_same_thread": False}` 설정
+- Supabase/PostgreSQL 관련 코드 전부 삭제됨
 
 ### 3-3. AI 분석 (OpenAI GPT-4o)
 - `response_format={"type": "json_object"}` 로 구조화된 JSON 응답
@@ -208,13 +212,13 @@ mkdir -p ~/.streamlit && nano ~/.streamlit/secrets.toml
 
 ### 4-4. secrets.toml 내용
 ```toml
-DATABASE_URL = "postgresql://postgres.zdwbsxipthnkluqfooxh:PASSWORD@aws-1-ap-northeast-2.pooler.supabase.com:5432/postgres"
 OPENAI_API_KEY = "sk-proj-..."
 TELEGRAM_BOT_TOKEN = "8732241207:..."
 TELEGRAM_CHAT_ID = "7274204338"
 APP_USERNAME = "admin"
 APP_PASSWORD_HASH = "sha256-password-hash"
 ```
+> ⚠️ `DATABASE_URL` 제거됨 — SQLite 사용으로 불필요
 
 비밀번호 해시는 로컬 PowerShell에서 아래 방식으로 생성:
 ```powershell
@@ -324,13 +328,13 @@ nohup streamlit run app.py --server.port 8501 > ~/streamlit.log 2>&1 &
 
 | 변수명 | 설명 | 설정 위치 |
 |--------|------|-----------|
-| `DATABASE_URL` | Supabase PostgreSQL 연결 URL | Streamlit Cloud Secrets / `~/.streamlit/secrets.toml` |
-| `OPENAI_API_KEY` | OpenAI API 키 | 동일 |
+| `OPENAI_API_KEY` | OpenAI API 키 | `~/.streamlit/secrets.toml` / `.env` |
 | `TELEGRAM_BOT_TOKEN` | 텔레그램 봇 토큰 | 동일 |
 | `TELEGRAM_CHAT_ID` | 텔레그램 Chat ID | 동일 |
 | `APP_USERNAME` | 앱 로그인 아이디 | 동일 |
 | `APP_PASSWORD_HASH` | 앱 로그인 비밀번호 SHA-256 해시 | 동일 |
 | `APP_PASSWORD` | 로컬 개발용 평문 비밀번호 fallback | `.env` 로컬 전용 |
+> ⚠️ `DATABASE_URL` 제거됨 — Supabase 사용 중단, SQLite 고정 사용
 
 ---
 
