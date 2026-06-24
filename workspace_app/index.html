@@ -24,6 +24,7 @@
       <button data-view="candidates">일정 후보</button>
       <button data-view="upload">미팅 업로드</button>
       <button data-view="meetings">미팅요약</button>
+      <button data-view="search">통합 검색</button>
     </nav>
 
     <section id="viewDashboard" class="view">
@@ -165,6 +166,19 @@
           </div>
         </form>
         <div id="uploadResult" class="notice"></div>
+      </section>
+    </section>
+
+    <section id="viewSearch" class="view hidden">
+      <section class="panel">
+        <div class="panel-head">
+          <h2>통합 검색</h2>
+        </div>
+        <form id="searchForm" class="search-form">
+          <input id="searchInput" placeholder="고객사, 담당자, 회의록, 일정, 액션 검색" />
+          <button type="submit" class="small-primary">검색</button>
+        </form>
+        <div id="searchResults" class="search-results"></div>
       </section>
     </section>
 

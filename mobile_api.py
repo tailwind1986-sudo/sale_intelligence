@@ -17,6 +17,7 @@ from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
 from dotenv import load_dotenv
 from pydantic import BaseModel
+from sqlalchemy import or_
 from sqlalchemy.orm import Session, joinedload
 from sqlalchemy.orm.attributes import flag_modified
 
@@ -775,6 +776,207 @@ def _analyze_record(db: Session, record: MeetingRecord, *, schedule_only: bool =
         db.commit()
     else:
         _save_meeting_analysis(db, record, result)
+
+
+def _snippet(text: str | None, query: str, limit: int = 130) -> str:
+    value = (text or "").strip()
+    if not value:
+        return ""
+    idx = value.lower().find(query.lower())
+    if idx < 0:
+        return _brief_text(value, limit)
+    start = max(0, idx - 35)
+    end = min(len(value), idx + limit)
+    prefix = "..." if start else ""
+    suffix = "..." if end < len(value) else ""
+    return prefix + value[start:end] + suffix
+
+
+@app.get("/api/search", dependencies=[Depends(_require_auth)])
+def integrated_search(q: str, db: Session = Depends(get_db)):
+    query = (q or "").strip()
+    if len(query) < 2:
+        return {"query": query, "total": 0, "groups": []}
+    like = f"%{query}%"
+    groups = []
+
+    companies = (
+        db.query(Company)
+        .filter(or_(
+            Company.name.ilike(like),
+            Company.memo.ilike(like),
+            Company.industry.ilike(like),
+            Company.address.ilike(like),
+            Company.website.ilike(like),
+        ))
+        .order_by(Company.name)
+        .limit(20)
+        .all()
+    )
+    groups.append({
+        "type": "companies",
+        "label": "고객사",
+        "items": [
+            {
+                "id": row.id,
+                "title": row.name,
+                "meta": " · ".join(v for v in [row.business_type, row.sales_stage, row.industry] if v),
+                "snippet": _snippet(row.memo or row.address or row.website, query),
+            }
+            for row in companies
+        ],
+    })
+
+    contacts = (
+        db.query(Contact)
+        .options(joinedload(Contact.company))
+        .filter(or_(
+            Contact.name.ilike(like),
+            Contact.position.ilike(like),
+            Contact.phone.ilike(like),
+            Contact.email.ilike(like),
+            Contact.notes.ilike(like),
+        ))
+        .order_by(Contact.name)
+        .limit(20)
+        .all()
+    )
+    groups.append({
+        "type": "contacts",
+        "label": "담당자",
+        "items": [
+            {
+                "id": row.id,
+                "company_id": row.company_id,
+                "title": row.name,
+                "meta": " · ".join(v for v in [row.company.name if row.company else "", row.position, row.phone, row.email] if v),
+                "snippet": _snippet(row.notes, query),
+            }
+            for row in contacts
+        ],
+    })
+
+    meetings = (
+        db.query(MeetingRecord)
+        .options(joinedload(MeetingRecord.company), joinedload(MeetingRecord.analysis))
+        .filter(or_(
+            MeetingRecord.raw_text.ilike(like),
+            MeetingRecord.attendees.ilike(like),
+            MeetingRecord.memo.ilike(like),
+            MeetingRecord.file_name.ilike(like),
+            MeetingRecord.analysis.has(or_(
+                MeetingAnalysis.one_line_summary.ilike(like),
+                MeetingAnalysis.detailed_summary.ilike(like),
+            )),
+        ))
+        .order_by(MeetingRecord.meeting_date.desc(), MeetingRecord.created_at.desc())
+        .limit(30)
+        .all()
+    )
+    groups.append({
+        "type": "meetings",
+        "label": "미팅/AI 요약",
+        "items": [
+            {
+                "id": row.id,
+                "company_id": row.company_id,
+                "title": row.analysis.one_line_summary if row.analysis and row.analysis.one_line_summary else f"{row.company.name if row.company else '-'} 미팅",
+                "meta": " · ".join(v for v in [
+                    row.meeting_date.isoformat() if row.meeting_date else "",
+                    row.company.name if row.company else "",
+                    row.meeting_type or "",
+                ] if v),
+                "snippet": _snippet(
+                    (row.analysis.detailed_summary if row.analysis else "") or row.raw_text or row.memo,
+                    query,
+                ),
+            }
+            for row in meetings
+        ],
+    })
+
+    promises = (
+        db.query(Promise)
+        .options(joinedload(Promise.company))
+        .filter(or_(
+            Promise.content.ilike(like),
+            Promise.promised_by.ilike(like),
+            Promise.notes.ilike(like),
+            Promise.status.ilike(like),
+        ))
+        .order_by(Promise.due_date)
+        .limit(30)
+        .all()
+    )
+    groups.append({
+        "type": "promises",
+        "label": "약속사항",
+        "items": [
+            {
+                "id": row.id,
+                "title": row.content,
+                "meta": " · ".join(v for v in [row.company.name if row.company else "", row.status, row.due_date.isoformat() if row.due_date else ""] if v),
+                "snippet": _snippet(row.notes, query),
+            }
+            for row in promises
+        ],
+    })
+
+    actions = (
+        db.query(ActionItem)
+        .options(joinedload(ActionItem.company))
+        .filter(or_(
+            ActionItem.content.ilike(like),
+            ActionItem.assignee.ilike(like),
+            ActionItem.notes.ilike(like),
+            ActionItem.status.ilike(like),
+        ))
+        .order_by(ActionItem.due_date)
+        .limit(30)
+        .all()
+    )
+    groups.append({
+        "type": "actions",
+        "label": "액션아이템",
+        "items": [
+            {
+                "id": row.id,
+                "title": row.content,
+                "meta": " · ".join(v for v in [row.company.name if row.company else "", row.assignee, row.status, row.due_date.isoformat() if row.due_date else ""] if v),
+                "snippet": _snippet(row.notes, query),
+            }
+            for row in actions
+        ],
+    })
+
+    schedules = (
+        db.query(Schedule)
+        .options(joinedload(Schedule.company))
+        .filter(or_(Schedule.title.ilike(like), Schedule.description.ilike(like)))
+        .order_by(Schedule.start_dt.desc())
+        .limit(30)
+        .all()
+    )
+    groups.append({
+        "type": "schedules",
+        "label": "일정",
+        "items": [
+            {
+                "id": row.id,
+                "title": row.title,
+                "meta": " · ".join(v for v in [
+                    row.start_dt.strftime("%Y-%m-%d %H:%M") if row.start_dt else "",
+                    row.company.name if row.company else "",
+                    "종일" if row.all_day else "",
+                ] if v),
+                "snippet": _snippet(row.description, query),
+            }
+            for row in schedules
+        ],
+    })
+
+    groups = [group for group in groups if group["items"]]
+    return {"query": query, "total": sum(len(group["items"]) for group in groups), "groups": groups}
 
 
 @app.get("/api/dashboard", dependencies=[Depends(_require_auth)])

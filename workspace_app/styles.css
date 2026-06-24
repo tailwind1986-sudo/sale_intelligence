@@ -358,6 +358,46 @@ textarea {
   font-weight: 800;
 }
 
+.search-form {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 96px;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.result-group {
+  margin-top: 18px;
+}
+
+.result-group h3 {
+  margin: 0 0 8px;
+  font-size: 0.95rem;
+}
+
+.search-row {
+  width: 100%;
+  display: block;
+  padding: 11px 0;
+  border: 0;
+  border-top: 1px solid #f1f3f5;
+  background: transparent;
+  color: var(--text);
+  text-align: left;
+}
+
+.search-row strong,
+.search-row span,
+.search-row small {
+  display: block;
+}
+
+.search-row span,
+.search-row small {
+  margin-top: 3px;
+  color: var(--muted);
+  line-height: 1.35;
+}
+
 .candidate-card {
   display: grid;
   gap: 8px;
@@ -444,6 +484,7 @@ textarea {
     .split,
     .inline-form,
     .upload-form,
+    .search-form,
     .two-cols {
     grid-template-columns: 1fr;
   }

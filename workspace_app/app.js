@@ -647,6 +647,47 @@ async function submitUpload(event) {
   await loadDashboard();
 }
 
+async function runSearch(event) {
+  if (event) event.preventDefault();
+  const query = $("searchInput").value.trim();
+  if (query.length < 2) {
+    $("searchResults").innerHTML = `<p class="empty">두 글자 이상 입력하세요.</p>`;
+    return;
+  }
+  $("searchResults").innerHTML = `<p class="empty">검색 중입니다.</p>`;
+  const result = await api(`/api/search?q=${encodeURIComponent(query)}`);
+  renderSearchResults(result || { groups: [], total: 0 });
+}
+
+function renderSearchResults(result) {
+  if (!result.total) {
+    $("searchResults").innerHTML = `<p class="empty">검색 결과가 없습니다.</p>`;
+    return;
+  }
+  $("searchResults").innerHTML = `
+    <p class="meta">총 ${result.total}건</p>
+    ${(result.groups || []).map(group => `
+      <section class="result-group">
+        <h3>${escapeHtml(group.label)} (${group.items.length})</h3>
+        ${group.items.map(item => {
+          const openAttr = group.type === "meetings"
+            ? `data-search-meeting="${item.id}"`
+            : (group.type === "companies" || group.type === "contacts")
+              ? `data-search-company="${item.company_id || item.id}"`
+              : "";
+          return `
+            <button class="search-row" ${openAttr}>
+              <strong>${escapeHtml(item.title || "-")}</strong>
+              <span>${escapeHtml(item.meta || "")}</span>
+              <small>${escapeHtml(item.snippet || "")}</small>
+            </button>
+          `;
+        }).join("")}
+      </section>
+    `).join("")}
+  `;
+}
+
 async function refreshCompanyOptions() {
   state.companies = await api("/api/companies") || [];
   renderActionFilters();
@@ -662,6 +703,7 @@ function setView(view) {
   $("viewCandidates").classList.toggle("hidden", view !== "candidates");
   $("viewMeetings").classList.toggle("hidden", view !== "meetings");
   $("viewUpload").classList.toggle("hidden", view !== "upload");
+  $("viewSearch").classList.toggle("hidden", view !== "search");
   for (const btn of document.querySelectorAll(".tabs button")) {
     btn.classList.toggle("active", btn.dataset.view === view);
   }
@@ -705,6 +747,11 @@ function bindEvents() {
   };
   $("uploadForm").onsubmit = submitUpload;
   $("clearUploadBtn").onclick = resetUploadForm;
+  $("searchForm").onsubmit = runSearch;
+  $("searchInput").oninput = () => {
+    clearTimeout(window.__searchTimer);
+    window.__searchTimer = setTimeout(runSearch, 350);
+  };
   document.addEventListener("click", async event => {
     const target = event.target;
     if (target.matches("[data-cancel-form]")) target.closest("form").classList.add("hidden");
@@ -787,6 +834,16 @@ function bindEvents() {
       $("meetingDetail").innerHTML = "";
       await loadMeetings();
       await loadDashboard();
+    }
+    const searchMeeting = target.closest("[data-search-meeting]")?.dataset.searchMeeting;
+    if (searchMeeting) {
+      setView("meetings");
+      await openMeeting(searchMeeting);
+    }
+    const searchCompany = target.closest("[data-search-company]")?.dataset.searchCompany;
+    if (searchCompany) {
+      setView("companies");
+      await openCompany(searchCompany);
     }
   });
   document.addEventListener("submit", async event => {

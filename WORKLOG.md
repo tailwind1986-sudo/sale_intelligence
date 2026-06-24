@@ -296,3 +296,28 @@
   - 로컬 기본 Python에는 FastAPI가 없어 `import mobile_api` 런타임 검증은 8단계 후 의존성 설치/로컬 실행 때 확인 예정
 - 서버 반영:
   - 아직 하지 않음
+
+### Streamlit 제거 7단계. 통합 검색
+
+- 상태: 완료
+- 변경 파일: `mobile_api.py`, `workspace_app/index.html`, `workspace_app/app.js`, `workspace_app/styles.css`, `WORKLOG.md`
+- 구현 내용:
+  - `/mobile/api/search` 통합 검색 API 추가
+  - 고객사, 담당자, 미팅 원문, AI 요약, 약속사항, 액션아이템, 일정 검색 지원
+  - workspace에 `통합 검색` 탭 추가
+  - 검색어 입력 시 자동 검색 및 검색 버튼 제출 지원
+  - 미팅 검색 결과 클릭 시 미팅 요약 상세로 이동
+  - 고객사/담당자 검색 결과 클릭 시 고객사 상세로 이동
+- 빠진 기능 검증:
+  - 기존 Streamlit 통합 검색의 주요 검색 범위 대응
+  - 미팅 AI 분석 결과는 한 줄 요약과 상세 요약 검색 대응
+  - JSON 상세 필드 전체 전문 검색은 DB 호환성을 위해 제외하고, 화면에 표시되는 핵심 텍스트 검색 중심으로 구성
+- 보존 사항:
+  - 기존 Streamlit 통합 검색 화면 유지
+  - 기존 DB 스키마 변경 없음
+- 검증:
+  - `python -m py_compile mobile_api.py services\ai_analyzer.py` 통과
+  - `ast.parse(..., feature_version=(3,10))` 통과
+  - `node --check workspace_app\app.js` 통과
+- 서버 반영:
+  - 아직 하지 않음
