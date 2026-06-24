@@ -321,3 +321,32 @@
   - `node --check workspace_app\app.js` 통과
 - 서버 반영:
   - 아직 하지 않음
+
+### Streamlit 제거 8단계. 리스크 분석 / 설정 / 텔레그램
+
+- 상태: 완료
+- 변경 파일: `mobile_api.py`, `workspace_app/index.html`, `workspace_app/app.js`, `workspace_app/styles.css`, `WORKLOG.md`
+- 구현 내용:
+  - `/mobile/api/risk` 리스크 스코어보드 API 추가
+  - 고객사별 약속 불이행, 약속 지연, 지연 액션, AI 평균 위험/신뢰, 종합 리스크 점수 계산
+  - 고객사별 누적 리스크 요인, 불만/우려사항, 경쟁사 언급, 불이행 약속, 위험/신뢰 추이 조회
+  - `/mobile/api/risk/{company_id}` 리스크 등급 저장 API 추가
+  - `/mobile/api/telegram/status` 텔레그램 설정 상태 API 추가
+  - `/mobile/api/telegram/test`, `/check-reminders`, `/daily-digest`, `/weekly-summary` 버튼형 실행 API 추가
+  - workspace에 `리스크/설정` 탭 추가
+  - 리스크 카드형 점수표, 상세 리스크, 등급 저장 UI 추가
+  - 텔레그램 테스트/알림 체크/오늘 브리핑/주간 요약 발송 UI 추가
+- 빠진 기능 검증:
+  - 기존 Streamlit 리스크 분석의 점수표, 고객사 상세 리스크, 등급 저장 흐름 대응
+  - 기존 텔레그램 설정의 연동 상태, 테스트 메시지, 알림 체크, 주간 요약 수동 발송 흐름 대응
+  - 오늘 브리핑 수동 발송은 기존 `send_daily_digest` 서비스 재사용
+- 보존 사항:
+  - 기존 Streamlit 리스크 분석과 일정관리 텔레그램 설정 화면 유지
+  - 기존 Telegram 서비스 로직과 reminder worker 유지
+  - 기존 DB 스키마 변경 없음
+- 검증:
+  - `python -m py_compile mobile_api.py services\ai_analyzer.py services\telegram_service.py reminder_worker.py` 통과
+  - `ast.parse(..., feature_version=(3,10))` 통과
+  - `node --check workspace_app\app.js` 통과
+- 서버 반영:
+  - 아직 하지 않음

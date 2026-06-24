@@ -398,6 +398,73 @@ textarea {
   line-height: 1.35;
 }
 
+.risk-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  margin-bottom: 14px;
+}
+
+.risk-card {
+  min-height: 96px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+  text-align: left;
+}
+
+.risk-card strong,
+.risk-card span,
+.risk-card small {
+  display: block;
+}
+
+.risk-card strong {
+  font-size: 1.8rem;
+}
+
+.risk-card span {
+  margin-top: 4px;
+  font-weight: 900;
+}
+
+.risk-card small {
+  margin-top: 4px;
+  color: var(--muted);
+  line-height: 1.35;
+}
+
+.risk-card.high {
+  border-color: #fecaca;
+  background: #fff1f2;
+}
+
+.risk-card.mid {
+  border-color: #fde68a;
+  background: #fffbeb;
+}
+
+.risk-card.low {
+  border-color: #bbf7d0;
+  background: #f0fdf4;
+}
+
+.button-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.button-grid button {
+  min-height: 42px;
+  border: 0;
+  border-radius: 10px;
+  background: #eef2f7;
+  color: var(--text);
+  font-weight: 900;
+}
+
 .candidate-card {
   display: grid;
   gap: 8px;
@@ -485,6 +552,8 @@ textarea {
     .inline-form,
     .upload-form,
     .search-form,
+    .risk-grid,
+    .button-grid,
     .two-cols {
     grid-template-columns: 1fr;
   }

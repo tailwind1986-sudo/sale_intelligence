@@ -979,6 +979,140 @@ def integrated_search(q: str, db: Session = Depends(get_db)):
     return {"query": query, "total": sum(len(group["items"]) for group in groups), "groups": groups}
 
 
+def _risk_row(company: Company) -> dict:
+    breach = sum(1 for p in company.promises if p.status == "불이행")
+    delayed_promises = sum(1 for p in company.promises if p.status == "지연")
+    overdue_actions = sum(
+        1 for item in company.action_items
+        if item.due_date and item.due_date < date.today() and item.status != "완료"
+    )
+    risk_scores = [m.analysis.risk_score for m in company.meetings if m.analysis and m.analysis.risk_score is not None]
+    trust_scores = [m.analysis.trust_score for m in company.meetings if m.analysis and m.analysis.trust_score is not None]
+    avg_risk = round(sum(risk_scores) / len(risk_scores)) if risk_scores else 0
+    avg_trust = round(sum(trust_scores) / len(trust_scores)) if trust_scores else 0
+    composite = min(100, int(breach * 20 + delayed_promises * 10 + overdue_actions * 5 + avg_risk * 0.5))
+    return {
+        "id": company.id,
+        "company": company.name,
+        "business_type": company.business_type or "",
+        "sales_stage": company.sales_stage or "",
+        "risk_level": company.risk_level or "",
+        "breach_promises": breach,
+        "delayed_promises": delayed_promises,
+        "overdue_actions": overdue_actions,
+        "avg_risk": avg_risk,
+        "avg_trust": avg_trust,
+        "composite": composite,
+    }
+
+
+@app.get("/api/risk", dependencies=[Depends(_require_auth)])
+def risk_dashboard(company_id: int | None = None, db: Session = Depends(get_db)):
+    companies = (
+        db.query(Company)
+        .options(
+            joinedload(Company.meetings).joinedload(MeetingRecord.analysis),
+            joinedload(Company.promises),
+            joinedload(Company.action_items),
+        )
+        .order_by(Company.name)
+        .all()
+    )
+    score_rows = sorted((_risk_row(row) for row in companies), key=lambda row: row["composite"], reverse=True)
+    selected = None
+    if companies:
+        selected_company = next((row for row in companies if row.id == company_id), companies[0])
+        risk_factors = []
+        complaints = []
+        competitors = []
+        trend = []
+        for meeting in sorted(selected_company.meetings, key=lambda row: row.meeting_date or date.min):
+            analysis = meeting.analysis
+            if not analysis:
+                continue
+            risk_factors.extend(str(item) for item in _json_list(analysis.risk_factors))
+            complaints.extend(str(item) for item in _json_list(analysis.complaints))
+            competitors.extend(str(item) for item in _json_list(analysis.competitor_mentions))
+            trend.append({
+                "date": meeting.meeting_date.isoformat() if meeting.meeting_date else "",
+                "risk": analysis.risk_score or 0,
+                "trust": analysis.trust_score or 0,
+            })
+        selected = {
+            "id": selected_company.id,
+            "company": selected_company.name,
+            "risk_level": selected_company.risk_level or "",
+            "risk_factors": risk_factors[-20:],
+            "complaints": complaints[-20:],
+            "competitors": competitors[-20:],
+            "breaches": [
+                {
+                    "id": row.id,
+                    "content": row.content,
+                    "due_date": row.due_date.isoformat() if row.due_date else "",
+                }
+                for row in selected_company.promises
+                if row.status == "불이행"
+            ],
+            "trend": trend[-12:],
+        }
+    return {"rows": score_rows, "selected": selected}
+
+
+@app.post("/api/risk/{company_id}", dependencies=[Depends(_require_auth)])
+def update_company_risk(company_id: int, payload: dict, db: Session = Depends(get_db)):
+    company = db.get(Company, company_id)
+    if not company:
+        raise HTTPException(status_code=404, detail="Company not found")
+    risk_level = (payload.get("risk_level") or "").strip()
+    if risk_level not in {"높음", "보통", "낮음"}:
+        raise HTTPException(status_code=400, detail="Invalid risk level")
+    company.risk_level = risk_level
+    company.updated_at = datetime.now()
+    db.commit()
+    return {"ok": True}
+
+
+@app.get("/api/telegram/status", dependencies=[Depends(_require_auth)])
+def telegram_status():
+    token = _get_secret("TELEGRAM_BOT_TOKEN")
+    chat_id = _get_secret("TELEGRAM_CHAT_ID")
+    return {
+        "configured": bool(token and chat_id),
+        "has_token": bool(token),
+        "has_chat_id": bool(chat_id),
+        "chat_id": chat_id if chat_id else "",
+    }
+
+
+@app.post("/api/telegram/test", dependencies=[Depends(_require_auth)])
+def telegram_test():
+    from services.telegram_service import send_message
+    ok = send_message("Sales Intelligence 알림 테스트 메시지입니다.")
+    return {"ok": bool(ok)}
+
+
+@app.post("/api/telegram/check-reminders", dependencies=[Depends(_require_auth)])
+def telegram_check_reminders(db: Session = Depends(get_db)):
+    from services.telegram_service import check_and_send_reminders
+    sent = check_and_send_reminders(db)
+    return {"ok": True, "sent": sent}
+
+
+@app.post("/api/telegram/daily-digest", dependencies=[Depends(_require_auth)])
+def telegram_daily_digest(db: Session = Depends(get_db)):
+    from services.telegram_service import send_daily_digest
+    ok = send_daily_digest(db)
+    return {"ok": bool(ok)}
+
+
+@app.post("/api/telegram/weekly-summary", dependencies=[Depends(_require_auth)])
+def telegram_weekly_summary(db: Session = Depends(get_db)):
+    from services.telegram_service import send_weekly_summary
+    ok = send_weekly_summary(db)
+    return {"ok": bool(ok)}
+
+
 @app.get("/api/dashboard", dependencies=[Depends(_require_auth)])
 def dashboard(db: Session = Depends(get_db)):
     now = datetime.now()

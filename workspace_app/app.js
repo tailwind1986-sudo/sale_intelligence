@@ -688,11 +688,85 @@ function renderSearchResults(result) {
   `;
 }
 
+async function loadRisk() {
+  const params = new URLSearchParams();
+  if ($("riskCompany").value) params.set("company_id", $("riskCompany").value);
+  const data = await api(`/api/risk?${params}`) || { rows: [], selected: null };
+  renderRisk(data);
+  await loadTelegramStatus();
+}
+
+function riskClass(score) {
+  if (score >= 70) return "high";
+  if (score >= 40) return "mid";
+  return "low";
+}
+
+function renderRisk(data) {
+  $("riskCompany").innerHTML = companyOptions($("riskCompany").value || data.selected?.id || "");
+  if (!data.rows.length) {
+    $("riskScoreboard").innerHTML = `<p class="empty">고객사를 먼저 등록하세요.</p>`;
+    $("riskDetail").innerHTML = "";
+    return;
+  }
+  $("riskScoreboard").innerHTML = data.rows.map(row => `
+    <button class="risk-card ${riskClass(row.composite)}" data-risk-company="${row.id}">
+      <strong>${escapeHtml(row.composite)}</strong>
+      <span>${escapeHtml(row.company)}</span>
+      <small>AI위험 ${row.avg_risk} · 신뢰 ${row.avg_trust} · 지연액션 ${row.overdue_actions}</small>
+    </button>
+  `).join("");
+  const selected = data.selected;
+  if (!selected) return;
+  $("riskCompany").value = selected.id;
+  $("riskDetail").innerHTML = `
+    <div class="detail-head">
+      <div>
+        <h3>${escapeHtml(selected.company)}</h3>
+        <p>현재 리스크 등급</p>
+      </div>
+      <div class="row-actions">
+        <select id="riskLevelSelect">
+          ${["높음", "보통", "낮음"].map(level => `<option value="${level}" ${selected.risk_level === level ? "selected" : ""}>${level}</option>`).join("")}
+        </select>
+        <button class="small-primary" data-risk-save="${selected.id}">저장</button>
+      </div>
+    </div>
+    ${listBlock("누적 리스크 요인", selected.risk_factors || [])}
+    ${listBlock("불만/우려사항", selected.complaints || [])}
+    ${listBlock("경쟁사 언급", selected.competitors || [])}
+    ${listBlock("불이행 약속", selected.breaches || [], item => typeof item === "object" ? `${item.content} / ${item.due_date || "기한 없음"}` : String(item))}
+    ${listBlock("위험/신뢰 추이", selected.trend || [], item => `${item.date}: 위험 ${item.risk} / 신뢰 ${item.trust}`)}
+  `;
+}
+
+async function loadTelegramStatus() {
+  const status = await api("/api/telegram/status");
+  if (!status) return;
+  if (status.configured) {
+    $("telegramStatus").textContent = `텔레그램 연동 완료 (Chat ID: ${status.chat_id})`;
+  } else {
+    $("telegramStatus").textContent = `텔레그램 미설정: Token ${status.has_token ? "OK" : "없음"} / Chat ID ${status.has_chat_id ? "OK" : "없음"}`;
+  }
+}
+
+async function runTelegramAction(action) {
+  $("telegramResult").textContent = "요청 처리 중입니다.";
+  const result = await api(`/api/telegram/${action}`, { method: "POST" });
+  if (!result) return;
+  if (action === "check-reminders") {
+    $("telegramResult").textContent = `알림 체크 완료: ${result.sent || 0}건 전송`;
+  } else {
+    $("telegramResult").textContent = result.ok ? "전송 완료" : "전송할 내용이 없거나 설정이 부족합니다.";
+  }
+}
+
 async function refreshCompanyOptions() {
   state.companies = await api("/api/companies") || [];
   renderActionFilters();
   $("meetingCompany").innerHTML = companyOptions($("meetingCompany").value);
   $("uploadCompany").innerHTML = companyOptions($("uploadCompany").value);
+  $("riskCompany").innerHTML = companyOptions($("riskCompany").value);
 }
 
 function setView(view) {
@@ -704,6 +778,7 @@ function setView(view) {
   $("viewMeetings").classList.toggle("hidden", view !== "meetings");
   $("viewUpload").classList.toggle("hidden", view !== "upload");
   $("viewSearch").classList.toggle("hidden", view !== "search");
+  $("viewRisk").classList.toggle("hidden", view !== "risk");
   for (const btn of document.querySelectorAll(".tabs button")) {
     btn.classList.toggle("active", btn.dataset.view === view);
   }
@@ -715,6 +790,7 @@ function setView(view) {
   if (view === "candidates") loadCandidates();
   if (view === "upload") resetUploadForm();
   if (view === "meetings") loadMeetings();
+  if (view === "risk") loadRisk();
 }
 
 function bindEvents() {
@@ -752,6 +828,7 @@ function bindEvents() {
     clearTimeout(window.__searchTimer);
     window.__searchTimer = setTimeout(runSearch, 350);
   };
+  $("riskCompany").onchange = loadRisk;
   document.addEventListener("click", async event => {
     const target = event.target;
     if (target.matches("[data-cancel-form]")) target.closest("form").classList.add("hidden");
@@ -845,6 +922,22 @@ function bindEvents() {
       setView("companies");
       await openCompany(searchCompany);
     }
+    const riskCompany = target.closest("[data-risk-company]")?.dataset.riskCompany;
+    if (riskCompany) {
+      $("riskCompany").value = riskCompany;
+      await loadRisk();
+    }
+    const riskSave = target.dataset.riskSave;
+    if (riskSave) {
+      await api(`/api/risk/${riskSave}`, {
+        method: "POST",
+        body: JSON.stringify({ risk_level: $("riskLevelSelect").value }),
+      });
+      await loadRisk();
+      await loadCompanies();
+    }
+    const telegramAction = target.dataset.telegramAction;
+    if (telegramAction) await runTelegramAction(telegramAction);
   });
   document.addEventListener("submit", async event => {
     const formIndex = event.target.dataset.candidateForm;
@@ -891,6 +984,7 @@ async function load() {
     renderCompanyFilters();
     $("meetingCompany").innerHTML = companyOptions("");
     $("uploadCompany").innerHTML = companyOptions("");
+    $("riskCompany").innerHTML = companyOptions("");
     $("uploadForm").meeting_date.value = todayIso();
     bindEvents();
     await loadDashboard();

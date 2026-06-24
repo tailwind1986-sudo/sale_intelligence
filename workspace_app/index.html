@@ -25,6 +25,7 @@
       <button data-view="upload">미팅 업로드</button>
       <button data-view="meetings">미팅요약</button>
       <button data-view="search">통합 검색</button>
+      <button data-view="risk">리스크/설정</button>
     </nav>
 
     <section id="viewDashboard" class="view">
@@ -179,6 +180,31 @@
           <button type="submit" class="small-primary">검색</button>
         </form>
         <div id="searchResults" class="search-results"></div>
+      </section>
+    </section>
+
+    <section id="viewRisk" class="view hidden">
+      <section class="panel">
+        <div class="panel-head">
+          <h2>리스크 분석</h2>
+          <select id="riskCompany"></select>
+        </div>
+        <div id="riskScoreboard" class="risk-grid"></div>
+        <div id="riskDetail" class="detail-box"></div>
+      </section>
+
+      <section class="panel">
+        <div class="panel-head">
+          <h2>텔레그램 설정</h2>
+        </div>
+        <div id="telegramStatus" class="notice"></div>
+        <div class="button-grid">
+          <button data-telegram-action="test">테스트 메시지</button>
+          <button data-telegram-action="check-reminders">지금 알림 체크</button>
+          <button data-telegram-action="daily-digest">오늘 브리핑 발송</button>
+          <button data-telegram-action="weekly-summary">주간 요약 발송</button>
+        </div>
+        <p id="telegramResult" class="meta"></p>
       </section>
     </section>
 
