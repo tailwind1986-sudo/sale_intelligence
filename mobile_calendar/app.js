@@ -21,6 +21,7 @@ const state = {
   editing: null,
   endDateTouched: false,
   endTimeTouched: false,
+  activeTab: "calendar",
 };
 
 const BASE = location.pathname.startsWith("/mobile") ? "/mobile" : "";
@@ -195,6 +196,7 @@ function renderWeek(week) {
     cell.innerHTML = `<div class="day-num">${d.getDate()}</div>`;
     cell.onclick = () => {
       state.selectedDate = iso;
+      state.activeTab = "calendar";
       renderMonth();
       renderDay();
     };
@@ -337,16 +339,105 @@ function compareItems(a, b) {
 }
 
 function renderDay() {
+  renderBottomNav();
+  if (state.activeTab === "list") return renderListPanel();
+  if (state.activeTab === "alerts") return renderAlertsPanel();
+  if (state.activeTab === "more") return renderMorePanel();
+
   const items = itemsForDay(state.selectedDate);
   $("dayTitle").textContent = formatKoreanDate(state.selectedDate, true);
-  $("daySubtitle").textContent = `일정 ${items.filter(i => i.kind === "schedule").length}건 · 미팅 ${items.filter(i => i.kind === "meeting").length}건`;
+  $("daySubtitle").textContent = `\uc77c\uc815 ${items.filter(i => i.kind === "schedule").length}\uac74 \u00b7 \ubbf8\ud305 ${items.filter(i => i.kind === "meeting").length}\uac74`;
   const wrap = $("dayItems");
   wrap.innerHTML = "";
   if (!items.length) {
-    wrap.innerHTML = `<p class="summary">선택한 날짜의 일정이나 미팅 기록이 없습니다.</p>`;
+    wrap.innerHTML = `<p class="summary">\uc120\ud0dd\ud55c \ub0a0\uc9dc\uc758 \uc77c\uc815\uc774\ub098 \ubbf8\ud305 \uae30\ub85d\uc774 \uc5c6\uc2b5\ub2c8\ub2e4.</p>`;
     return;
   }
   for (const item of items) wrap.appendChild(itemButton(item));
+}
+
+function monthItems() {
+  return [
+    ...state.schedules.map(s => ({ ...s, kind: "schedule" })),
+    ...state.meetings.map(m => ({
+      ...m,
+      kind: "meeting",
+      title: `\ubbf8\ud305 \u00b7 ${m.company_name || "-"}`,
+      description: m.summary || m.meeting_type || "",
+      start_date: m.meeting_date,
+      end_date: m.meeting_date,
+      all_day: true,
+      color: "#14B8A6",
+    })),
+  ].sort((a, b) => {
+    const da = a.start_date || a.meeting_date || "";
+    const db = b.start_date || b.meeting_date || "";
+    if (da !== db) return da.localeCompare(db);
+    return compareItems(a, b);
+  });
+}
+
+function renderListPanel() {
+  const items = monthItems();
+  $("dayTitle").textContent = "\uc6d4\uac04 \ubaa9\ub85d";
+  $("daySubtitle").textContent = `\uc77c\uc815 ${state.schedules.length}\uac74 \u00b7 \ubbf8\ud305 ${state.meetings.length}\uac74`;
+  const wrap = $("dayItems");
+  wrap.innerHTML = "";
+  if (!items.length) {
+    wrap.innerHTML = `<p class="summary">\uc774\ubc88 \ub2ec \uc77c\uc815\uc774\ub098 \ubbf8\ud305 \uae30\ub85d\uc774 \uc5c6\uc2b5\ub2c8\ub2e4.</p>`;
+    return;
+  }
+  for (const item of items) {
+    const row = document.createElement("div");
+    row.className = "list-row";
+    row.innerHTML = `<div class="list-date">${escapeHtml(formatKoreanDate(item.start_date || item.meeting_date, false))}</div>`;
+    row.appendChild(itemButton(item));
+    wrap.appendChild(row);
+  }
+}
+
+function renderAlertsPanel() {
+  const items = state.schedules
+    .filter(s => s.remind_enabled)
+    .map(s => ({ ...s, kind: "schedule" }))
+    .sort((a, b) => (a.start_date || "").localeCompare(b.start_date || "") || compareItems(a, b));
+  $("dayTitle").textContent = "\uc54c\ub9bc";
+  $("daySubtitle").textContent = `\uc54c\ub9bc \uc124\uc815 \uc77c\uc815 ${items.length}\uac74`;
+  const wrap = $("dayItems");
+  wrap.innerHTML = "";
+  if (!items.length) {
+    wrap.innerHTML = `<p class="summary">\uc54c\ub9bc\uc774 \ucf1c\uc9c4 \uc77c\uc815\uc774 \uc5c6\uc2b5\ub2c8\ub2e4.</p>`;
+    return;
+  }
+  for (const item of items) wrap.appendChild(itemButton(item));
+}
+
+function renderMorePanel() {
+  $("dayTitle").textContent = "\ub354\ubcf4\uae30";
+  $("daySubtitle").textContent = "\ubaa8\ubc14\uc77c \uc77c\uc815 \uad00\ub9ac";
+  $("dayItems").innerHTML = `
+    <button class="menu-row" id="reloadCalendar">\uc0c8\ub85c\uace0\uce68</button>
+    <button class="menu-row" id="goTodayMenu">\uc624\ub298\ub85c \uc774\ub3d9</button>
+    <button class="menu-row danger-text" id="logoutMobile">\ub85c\uadf8\uc544\uc6c3</button>
+  `;
+  $("reloadCalendar").onclick = () => loadMonth();
+  $("goTodayMenu").onclick = goToday;
+  $("logoutMobile").onclick = () => {
+    localStorage.removeItem("sales_mobile_token");
+    state.token = "";
+    show("login");
+  };
+}
+
+function renderBottomNav() {
+  for (const btn of document.querySelectorAll(".bottom-nav button")) {
+    btn.classList.toggle("active", btn.dataset.tab === state.activeTab);
+  }
+}
+
+function setTab(tab) {
+  state.activeTab = tab;
+  renderDay();
 }
 
 function itemButton(item) {
@@ -538,10 +629,13 @@ $("startTime").onchange = () => syncEndTimeToStart(true);
 $("endTime").onchange = () => { state.endTimeTouched = true; };
 $("saveSchedule").onclick = saveSchedule;
 $("deleteSchedule").onclick = deleteSchedule;
+for (const btn of document.querySelectorAll(".bottom-nav button")) {
+  btn.onclick = () => setTab(btn.dataset.tab || "calendar");
+}
 for (const btn of document.querySelectorAll(".back")) btn.onclick = () => show(btn.dataset.target);
 
 if ("serviceWorker" in navigator) {
-  navigator.serviceWorker.register(`${BASE}/sw.js?v=20260624-tt8`, { scope: `${BASE}/` }).then(reg => reg.update()).catch(() => {});
+  navigator.serviceWorker.register(`${BASE}/sw.js?v=20260624-tt9`, { scope: `${BASE}/` }).then(reg => reg.update()).catch(() => {});
 }
 
 consumeUrlAuth();

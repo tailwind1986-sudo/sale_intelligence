@@ -7,7 +7,7 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="default" />
   <meta name="theme-color" content="#ffffff" />
   <link rel="manifest" href="/mobile/static/manifest.webmanifest" />
-  <link rel="stylesheet" href="/mobile/static/styles.css?v=20260624-tt8" />
+  <link rel="stylesheet" href="/mobile/static/styles.css?v=20260624-tt9" />
   <title>Sales Calendar</title>
 </head>
 <body>
@@ -57,10 +57,10 @@
       </section>
 
       <nav class="bottom-nav" aria-label="하단 메뉴">
-        <button class="active">캘린더</button>
-        <button disabled>목록</button>
-        <button disabled>알림</button>
-        <button disabled>더보기</button>
+        <button class="active" data-tab="calendar" type="button">캘린더</button>
+        <button data-tab="list" type="button">목록</button>
+        <button data-tab="alerts" type="button">알림</button>
+        <button data-tab="more" type="button">더보기</button>
       </nav>
     </section>
 
@@ -122,6 +122,6 @@
       <p id="editorError" class="error"></p>
     </section>
   </main>
-  <script src="/mobile/static/app.js?v=20260624-tt8"></script>
+  <script src="/mobile/static/app.js?v=20260624-tt9"></script>
 </body>
 </html>
