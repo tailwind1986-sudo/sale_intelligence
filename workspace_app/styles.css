@@ -125,6 +125,13 @@ h2 {
   margin-bottom: 14px;
 }
 
+.split {
+  display: grid;
+  grid-template-columns: minmax(260px, 0.9fr) minmax(0, 1.5fr);
+  gap: 14px;
+  align-items: start;
+}
+
 .panel {
   padding: 16px;
 }
@@ -232,6 +239,122 @@ textarea {
   padding-top: 0;
 }
 
+.company-card {
+  width: 100%;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+  text-align: left;
+}
+
+.company-card strong,
+.company-card span,
+.company-card small {
+  display: block;
+}
+
+.company-card span,
+.company-card small {
+  margin-top: 4px;
+  color: var(--muted);
+}
+
+.detail-box {
+  min-height: 160px;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+}
+
+.detail-head,
+.mini-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.detail-head h3,
+.detail-section h3 {
+  margin: 0;
+}
+
+.detail-head p {
+  margin: 4px 0 0;
+  color: var(--muted);
+  font-weight: 800;
+}
+
+.detail-section {
+  margin-top: 16px;
+  padding-top: 14px;
+  border-top: 1px solid #f1f3f5;
+}
+
+.mini-row {
+  padding: 10px 0;
+  border-top: 1px solid #f1f3f5;
+}
+
+.mini-row:first-of-type {
+  border-top: 0;
+}
+
+.mini-row strong,
+.mini-row span {
+  display: block;
+}
+
+.mini-row span {
+  margin-top: 3px;
+  color: var(--muted);
+  font-size: 0.86rem;
+}
+
+.row-actions {
+  display: flex;
+  gap: 6px;
+  flex: 0 0 auto;
+}
+
+.row-actions button,
+.inline-form button {
+  min-height: 34px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 9px;
+  background: #eef2f7;
+  color: var(--text);
+  font-weight: 900;
+}
+
+.inline-form {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin: 10px 0 12px;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fbfcfd;
+}
+
+.check {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 40px;
+  color: var(--muted);
+  font-weight: 800;
+}
+
+.check input {
+  width: auto;
+  min-height: auto;
+}
+
 .overdue .title,
 .overdue .date {
   color: var(--danger);
@@ -273,11 +396,18 @@ textarea {
 
   .filters,
   .edit-form,
-  .manage-row {
+  .manage-row,
+  .split,
+  .inline-form {
     grid-template-columns: 1fr;
   }
 
   .manage-row {
     align-items: stretch;
+  }
+
+  .detail-head,
+  .mini-row {
+    flex-direction: column;
   }
 }

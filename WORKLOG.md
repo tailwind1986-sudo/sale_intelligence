@@ -53,6 +53,32 @@
 - 서버 반영:
   - 아직 하지 않음
 
+### Streamlit 제거 3단계. 고객사 관리
+
+- 상태: 완료
+- 변경 파일: `mobile_api.py`, `workspace_app/index.html`, `workspace_app/app.js`, `workspace_app/styles.css`
+- 구현 내용:
+  - `/mobile/api/workspace/companies` 고객사 목록/검색/필터 API 추가
+  - 고객사 상세, 등록, 수정, 삭제 API 추가
+  - 담당자 등록, 수정, 삭제 API 추가
+  - 고객 취향/중요정보 등록, 수정, 삭제 API 추가
+  - workspace에 `고객사` 탭 추가
+  - 고객사 목록/상세 2단 구조, 최근 미팅, 담당자, 고객 정보 표시
+- 빠진 기능 검증:
+  - 기존 Streamlit 고객사 목록의 고객사명/담당자 검색, 사업구분/영업단계/리스크 필터 대응
+  - 기존 고객사 등록/수정 주요 필드 대응
+  - 기존 담당자 관리의 추가/삭제 및 주요 필드 대응, 수정 기능은 신규 추가
+  - 기존 고객 취향·중요정보 추가/삭제 및 주요 필드 대응, 수정 기능은 신규 추가
+- 보존 사항:
+  - 기존 Streamlit 고객사 관리 화면 유지
+  - 기존 DB 스키마 변경 없음
+- 검증:
+  - `python -m py_compile mobile_api.py` 통과
+  - `ast.parse(..., feature_version=(3,10))` 통과
+  - `node --check workspace_app\app.js` 통과
+- 서버 반영:
+  - 아직 하지 않음
+
 ### 1. 오늘/이번 주 실행 대시보드
 
 - 상태: 완료

@@ -22,7 +22,7 @@ from sqlalchemy.orm import Session, joinedload
 load_dotenv()
 
 from database.db import SessionLocal, create_database
-from database.models import ActionItem, Company, MeetingRecord, Promise, Schedule
+from database.models import ActionItem, Company, Contact, CustomerInfo, MeetingRecord, Promise, Schedule
 
 
 APP_DIR = Path(__file__).parent
@@ -120,6 +120,40 @@ class PromisePayload(BaseModel):
     notes: str | None = None
 
 
+class CompanyPayload(BaseModel):
+    name: str
+    business_type: str | None = None
+    industry: str | None = None
+    address: str | None = None
+    website: str | None = None
+    sales_stage: str | None = None
+    expected_revenue: float | None = None
+    importance: str | None = None
+    risk_level: str | None = None
+    memo: str | None = None
+
+
+class ContactPayload(BaseModel):
+    company_id: int
+    name: str
+    position: str | None = None
+    phone: str | None = None
+    email: str | None = None
+    birthday: str | None = None
+    is_primary: bool = False
+    notes: str | None = None
+
+
+class CustomerInfoPayload(BaseModel):
+    company_id: int
+    contact_id: int | None = None
+    category: str | None = None
+    key: str
+    value: str
+    importance: str = "보통"
+    notes: str | None = None
+
+
 app = FastAPI(title="Sales Intelligence Mobile Calendar")
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 app.mount("/workspace/static", StaticFiles(directory=WORKSPACE_DIR), name="workspace_static")
@@ -178,6 +212,160 @@ def login(payload: LoginPayload):
 def companies(db: Session = Depends(get_db)):
     rows = db.query(Company).order_by(Company.name).all()
     return [{"id": c.id, "name": c.name} for c in rows]
+
+
+@app.get("/api/workspace/companies", dependencies=[Depends(_require_auth)])
+def workspace_companies(
+    q: str = "",
+    business_type: str = "전체",
+    sales_stage: str = "전체",
+    risk_level: str = "전체",
+    db: Session = Depends(get_db),
+):
+    query = db.query(Company).options(
+        joinedload(Company.contacts),
+        joinedload(Company.meetings).joinedload(MeetingRecord.analysis),
+        joinedload(Company.promises),
+        joinedload(Company.action_items),
+        joinedload(Company.customer_infos).joinedload(CustomerInfo.contact),
+    )
+    if q:
+        like = f"%{q}%"
+        query = query.filter(
+            (Company.name.ilike(like)) |
+            (Company.memo.ilike(like)) |
+            (Company.industry.ilike(like)) |
+            (Company.contacts.any(Contact.name.ilike(like)))
+        )
+    if business_type and business_type != "전체":
+        query = query.filter(Company.business_type == business_type)
+    if sales_stage and sales_stage != "전체":
+        query = query.filter(Company.sales_stage == sales_stage)
+    if risk_level and risk_level != "전체":
+        query = query.filter(Company.risk_level == risk_level)
+    rows = query.order_by(Company.name).limit(300).all()
+    return [_company_to_dict(row) for row in rows]
+
+
+@app.get("/api/workspace/companies/{company_id}", dependencies=[Depends(_require_auth)])
+def workspace_company_detail(company_id: int, db: Session = Depends(get_db)):
+    row = (
+        db.query(Company)
+        .options(
+            joinedload(Company.contacts),
+            joinedload(Company.meetings).joinedload(MeetingRecord.analysis),
+            joinedload(Company.promises),
+            joinedload(Company.action_items),
+            joinedload(Company.customer_infos).joinedload(CustomerInfo.contact),
+        )
+        .filter(Company.id == company_id)
+        .first()
+    )
+    if not row:
+        raise HTTPException(status_code=404, detail="Company not found")
+    return _company_to_dict(row, detail=True)
+
+
+@app.post("/api/workspace/companies", dependencies=[Depends(_require_auth)])
+def create_company(payload: CompanyPayload, db: Session = Depends(get_db)):
+    row = Company(**payload.dict())
+    db.add(row)
+    db.commit()
+    db.refresh(row)
+    return _company_to_dict(row, detail=True)
+
+
+@app.put("/api/workspace/companies/{company_id}", dependencies=[Depends(_require_auth)])
+def update_company(company_id: int, payload: CompanyPayload, db: Session = Depends(get_db)):
+    row = db.get(Company, company_id)
+    if not row:
+        raise HTTPException(status_code=404, detail="Company not found")
+    for key, value in payload.dict().items():
+        setattr(row, key, value)
+    row.updated_at = datetime.now()
+    db.commit()
+    db.refresh(row)
+    return _company_to_dict(row, detail=True)
+
+
+@app.delete("/api/workspace/companies/{company_id}", dependencies=[Depends(_require_auth)])
+def delete_company(company_id: int, db: Session = Depends(get_db)):
+    row = db.get(Company, company_id)
+    if not row:
+        raise HTTPException(status_code=404, detail="Company not found")
+    db.delete(row)
+    db.commit()
+    return {"ok": True}
+
+
+@app.post("/api/workspace/contacts", dependencies=[Depends(_require_auth)])
+def create_contact(payload: ContactPayload, db: Session = Depends(get_db)):
+    if not db.get(Company, payload.company_id):
+        raise HTTPException(status_code=404, detail="Company not found")
+    row = Contact(**payload.dict())
+    db.add(row)
+    db.commit()
+    db.refresh(row)
+    return _contact_to_dict(row)
+
+
+@app.put("/api/workspace/contacts/{contact_id}", dependencies=[Depends(_require_auth)])
+def update_contact(contact_id: int, payload: ContactPayload, db: Session = Depends(get_db)):
+    row = db.get(Contact, contact_id)
+    if not row:
+        raise HTTPException(status_code=404, detail="Contact not found")
+    if not db.get(Company, payload.company_id):
+        raise HTTPException(status_code=404, detail="Company not found")
+    for key, value in payload.dict().items():
+        setattr(row, key, value)
+    db.commit()
+    db.refresh(row)
+    return _contact_to_dict(row)
+
+
+@app.delete("/api/workspace/contacts/{contact_id}", dependencies=[Depends(_require_auth)])
+def delete_contact(contact_id: int, db: Session = Depends(get_db)):
+    row = db.get(Contact, contact_id)
+    if not row:
+        raise HTTPException(status_code=404, detail="Contact not found")
+    db.delete(row)
+    db.commit()
+    return {"ok": True}
+
+
+@app.post("/api/workspace/customer-infos", dependencies=[Depends(_require_auth)])
+def create_customer_info(payload: CustomerInfoPayload, db: Session = Depends(get_db)):
+    if not db.get(Company, payload.company_id):
+        raise HTTPException(status_code=404, detail="Company not found")
+    row = CustomerInfo(**payload.dict())
+    db.add(row)
+    db.commit()
+    db.refresh(row)
+    return _customer_info_to_dict(row)
+
+
+@app.put("/api/workspace/customer-infos/{info_id}", dependencies=[Depends(_require_auth)])
+def update_customer_info(info_id: int, payload: CustomerInfoPayload, db: Session = Depends(get_db)):
+    row = db.get(CustomerInfo, info_id)
+    if not row:
+        raise HTTPException(status_code=404, detail="Customer info not found")
+    if not db.get(Company, payload.company_id):
+        raise HTTPException(status_code=404, detail="Company not found")
+    for key, value in payload.dict().items():
+        setattr(row, key, value)
+    db.commit()
+    db.refresh(row)
+    return _customer_info_to_dict(row)
+
+
+@app.delete("/api/workspace/customer-infos/{info_id}", dependencies=[Depends(_require_auth)])
+def delete_customer_info(info_id: int, db: Session = Depends(get_db)):
+    row = db.get(CustomerInfo, info_id)
+    if not row:
+        raise HTTPException(status_code=404, detail="Customer info not found")
+    db.delete(row)
+    db.commit()
+    return {"ok": True}
 
 
 def _month_bounds(year: int, month: int) -> tuple[datetime, datetime]:
@@ -245,6 +433,66 @@ def _promise_to_dict(p: Promise) -> dict:
         "notes": p.notes or "",
         "is_overdue": bool(p.due_date and p.due_date < date.today() and p.status != "완료"),
     }
+
+
+def _contact_to_dict(c: Contact) -> dict:
+    return {
+        "id": c.id,
+        "company_id": c.company_id,
+        "name": c.name,
+        "position": c.position or "",
+        "phone": c.phone or "",
+        "email": c.email or "",
+        "birthday": c.birthday or "",
+        "is_primary": bool(c.is_primary),
+        "notes": c.notes or "",
+    }
+
+
+def _customer_info_to_dict(info: CustomerInfo) -> dict:
+    return {
+        "id": info.id,
+        "company_id": info.company_id,
+        "contact_id": info.contact_id,
+        "contact_name": info.contact.name if info.contact else "",
+        "category": info.category or "",
+        "key": info.key,
+        "value": info.value,
+        "importance": info.importance or "",
+        "notes": info.notes or "",
+    }
+
+
+def _company_to_dict(c: Company, detail: bool = False) -> dict:
+    data = {
+        "id": c.id,
+        "name": c.name,
+        "business_type": c.business_type or "",
+        "industry": c.industry or "",
+        "address": c.address or "",
+        "website": c.website or "",
+        "sales_stage": c.sales_stage or "",
+        "expected_revenue": c.expected_revenue,
+        "importance": c.importance or "",
+        "risk_level": c.risk_level or "",
+        "memo": c.memo or "",
+        "meeting_count": len(c.meetings) if getattr(c, "meetings", None) is not None else 0,
+        "action_count": len(c.action_items) if getattr(c, "action_items", None) is not None else 0,
+        "promise_count": len(c.promises) if getattr(c, "promises", None) is not None else 0,
+    }
+    if detail:
+        data["contacts"] = [_contact_to_dict(row) for row in c.contacts]
+        data["customer_infos"] = [_customer_info_to_dict(row) for row in c.customer_infos]
+        recent = sorted([m for m in c.meetings if m.meeting_date], key=lambda m: m.meeting_date, reverse=True)[:5]
+        data["recent_meetings"] = [
+            {
+                "id": m.id,
+                "date": m.meeting_date.isoformat() if m.meeting_date else "",
+                "summary": _brief_text(m.analysis.one_line_summary if m.analysis else m.memo),
+            }
+            for m in recent
+        ]
+    return data
 
 
 def _brief_text(value: str | None, limit: int = 90) -> str:

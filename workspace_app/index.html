@@ -20,6 +20,7 @@
     <nav class="tabs">
       <button class="active" data-view="dashboard">대시보드</button>
       <button data-view="actions">액션/약속</button>
+      <button data-view="companies">고객사</button>
     </nav>
 
     <section id="viewDashboard" class="view">
@@ -79,6 +80,26 @@
         </div>
         <form id="promiseForm" class="edit-form hidden"></form>
         <div id="promiseList" class="list"></div>
+      </section>
+    </section>
+
+    <section id="viewCompanies" class="view hidden">
+      <section class="panel">
+        <div class="panel-head">
+          <h2>고객사 관리</h2>
+          <button id="newCompanyBtn" class="small-primary">신규 등록</button>
+        </div>
+        <div class="filters">
+          <input id="companySearch" placeholder="고객사/담당자 검색" />
+          <select id="companyTypeFilter"></select>
+          <select id="companyStageFilter"></select>
+          <select id="companyRiskFilter"></select>
+        </div>
+        <form id="companyForm" class="edit-form hidden"></form>
+        <div class="split">
+          <div id="companyList" class="list"></div>
+          <div id="companyDetail" class="detail-box"></div>
+        </div>
       </section>
     </section>
 
