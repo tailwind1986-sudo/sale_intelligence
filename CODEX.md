@@ -21,6 +21,8 @@
 | 2026-06-24 | `reminder_worker.py` | `weekly` 인자 추가 — `python reminder_worker.py weekly` 로 주간 요약 실행 |
 | 2026-06-24 | `deploy/oracle/sales-weekly.service` | 주간 요약 systemd 서비스 파일 추가 |
 | 2026-06-24 | `deploy/oracle/sales-weekly.timer` | 매주 금요일 11:00 KST (02:00 UTC) 실행 systemd timer 추가 |
+| 2026-06-24 | `requirements.txt` | pg8000 제거 — Supabase 사용 중단, SQLite only |
+| 2026-06-24 | `deploy/oracle/backup.sh` | SQLite 자동 백업 스크립트 — 일별 7일 보관, 주별 4주 보관 |
 
 ---
 
@@ -31,7 +33,7 @@
 | 프로젝트명 | Sales Intelligence |
 | 목적 | 영업 미팅 기록 관리, AI 분석, 고객사 관리, 일정 관리 통합 시스템 |
 | 언어/프레임워크 | Python 3.x + Streamlit |
-| DB | Supabase PostgreSQL (운영) / SQLite (로컬 개발) |
+| DB | SQLite (Oracle 서버 `/home/ubuntu/app/data/sales_intelligence.db`) |
 | AI | OpenAI GPT-4o |
 | 알림 | Telegram Bot API |
 | 배포 | Oracle Cloud VM + Streamlit Cloud (병행) |
