@@ -779,7 +779,22 @@ function setView(view) {
   $("viewUpload").classList.toggle("hidden", view !== "upload");
   $("viewSearch").classList.toggle("hidden", view !== "search");
   $("viewRisk").classList.toggle("hidden", view !== "risk");
-  for (const btn of document.querySelectorAll(".tabs button")) {
+  $("viewCalendar").classList.toggle("hidden", view !== "calendar");
+  if (view === "calendar") {
+    const frame = document.getElementById("calendarFrame");
+    if (!frame.dataset.loaded) {
+      frame.dataset.loaded = "1";
+      frame.src = token ? `/mobile/?auth=${encodeURIComponent(token)}` : "/mobile/";
+    }
+  }
+  const titles = {
+    dashboard: "대시보드", actions: "액션 / 약속", companies: "고객사",
+    candidates: "일정 후보", meetings: "미팅 요약", upload: "미팅 업로드",
+    search: "통합 검색", risk: "리스크 / 설정", calendar: "캘린더",
+  };
+  const titleEl = $("pageTitle");
+  if (titleEl) titleEl.textContent = titles[view] || view;
+  for (const btn of document.querySelectorAll(".nav-item[data-view]")) {
     btn.classList.toggle("active", btn.dataset.view === view);
   }
   if (view === "actions") {
@@ -793,9 +808,36 @@ function setView(view) {
   if (view === "risk") loadRisk();
 }
 
+function bindSidebar() {
+  const sidebar = document.getElementById("sidebar");
+  const overlay = document.getElementById("sidebarOverlay");
+  const hamburger = document.getElementById("hamburger");
+  const closeBtn = document.getElementById("sidebarClose");
+
+  function openSidebar() {
+    sidebar.classList.add("open");
+    overlay.classList.add("open");
+  }
+  function closeSidebar() {
+    sidebar.classList.remove("open");
+    overlay.classList.remove("open");
+  }
+
+  hamburger?.addEventListener("click", openSidebar);
+  closeBtn?.addEventListener("click", closeSidebar);
+  overlay?.addEventListener("click", closeSidebar);
+}
+
 function bindEvents() {
-  for (const btn of document.querySelectorAll(".tabs button")) {
-    btn.onclick = () => setView(btn.dataset.view);
+  for (const btn of document.querySelectorAll(".nav-item[data-view]")) {
+    btn.onclick = () => {
+      setView(btn.dataset.view);
+      // 모바일에서 메뉴 선택 시 사이드바 닫기
+      if (window.innerWidth <= 768) {
+        document.getElementById("sidebar")?.classList.remove("open");
+        document.getElementById("sidebarOverlay")?.classList.remove("open");
+      }
+    };
   }
   $("newActionBtn").onclick = () => showActionForm();
   $("newPromiseBtn").onclick = () => showPromiseForm();
@@ -986,6 +1028,7 @@ async function load() {
     $("uploadCompany").innerHTML = companyOptions("");
     $("riskCompany").innerHTML = companyOptions("");
     $("uploadForm").meeting_date.value = todayIso();
+    bindSidebar();
     bindEvents();
     await loadDashboard();
   } catch (err) {

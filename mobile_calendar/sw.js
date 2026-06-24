@@ -1,32 +1,10 @@
-const CACHE_NAME = "sales-mobile-v11";
-const ASSETS = [
-  "/mobile/",
-  "/mobile/static/styles.css?v=20260624-tt9",
-  "/mobile/static/app.js?v=20260624-tt9",
-];
-
-self.addEventListener("install", event => {
-  event.waitUntil(caches.open(CACHE_NAME).then(cache => cache.addAll(ASSETS)));
-  self.skipWaiting();
-});
-
+// 서비스워커 비활성화 — 모든 캐시 삭제 후 자기 해제
+self.addEventListener("install", () => self.skipWaiting());
 self.addEventListener("activate", event => {
   event.waitUntil(
-    caches.keys().then(keys => Promise.all(keys.filter(key => key !== CACHE_NAME).map(key => caches.delete(key))))
+    caches.keys()
+      .then(keys => Promise.all(keys.map(k => caches.delete(k))))
+      .then(() => self.registration.unregister())
   );
   self.clients.claim();
-});
-
-self.addEventListener("fetch", event => {
-  event.respondWith(
-    fetch(event.request)
-      .then(response => {
-        if (event.request.method === "GET" && response.ok) {
-          const clone = response.clone();
-          caches.open(CACHE_NAME).then(cache => cache.put(event.request, clone));
-        }
-        return response;
-      })
-      .catch(() => caches.match(event.request))
-  );
 });

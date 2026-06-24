@@ -94,10 +94,7 @@ async function api(path, options = {}) {
   if (state.token) headers.Authorization = `Bearer ${state.token}`;
   const res = await fetch(`${BASE}${path}`, { ...options, headers });
   if (res.status === 401) {
-    localStorage.removeItem("sales_mobile_token");
-    state.token = "";
-    show("login");
-    throw new Error("로그인이 필요합니다.");
+    throw new Error("인증 오류가 발생했습니다.");
   }
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
@@ -426,8 +423,6 @@ function renderMorePanel() {
   $("goTodayMenu").onclick = goToday;
   $("logoutMobile").onclick = () => {
     localStorage.removeItem("sales_mobile_token");
-    state.token = "";
-    show("login");
   };
 }
 
@@ -685,9 +680,8 @@ for (const btn of document.querySelectorAll(".bottom-nav button")) {
 for (const btn of document.querySelectorAll(".back")) btn.onclick = () => show(btn.dataset.target);
 
 if ("serviceWorker" in navigator) {
-  navigator.serviceWorker.register(`${BASE}/sw.js?v=20260624-tt10`, { scope: `${BASE}/` }).then(reg => reg.update()).catch(() => {});
+  navigator.serviceWorker.getRegistrations().then(regs => regs.forEach(r => r.unregister()));
 }
 
 consumeUrlAuth();
-if (state.token) bootstrap().catch(() => show("login"));
-else show("login");
+bootstrap().catch(() => show("login"));
