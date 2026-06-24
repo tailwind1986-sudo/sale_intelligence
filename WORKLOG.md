@@ -25,6 +25,20 @@
 - 서버 반영:
   - 아직 하지 않음
 
+### 긴급 수정. AI 일정 후보 페이지 SyntaxError
+
+- 상태: 완료
+- 변경 파일: `app.py`
+- 원인:
+  - AI 일정 후보 페이지의 f-string 표현식 내부에 유니코드 이스케이프 문자열이 포함되어 서버 Python에서 `f-string expression part cannot include a backslash` 오류 발생
+- 수정 내용:
+  - `candidate.get("confidence") or "확인 필요"` 값을 f-string 밖의 `confidence` 변수로 분리
+- 검증:
+  - `python -m py_compile app.py` 통과
+  - `ast.parse(..., feature_version=(3,10))` 통과
+- 서버 반영:
+  - 아직 하지 않음
+
 ### 7. 검색 강화
 
 - 상태: 완료

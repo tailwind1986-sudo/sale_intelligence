@@ -2179,10 +2179,11 @@ def page_schedule_candidates():
             assignee = candidate.get("assignee") or ""
             location = candidate.get("location") or ""
             note = candidate.get("note") or ""
+            confidence = candidate.get("confidence") or "확인 필요"
 
             with st.expander(f"{fmt_date(default_date)} · {company_name} · {title}", expanded=False):
                 st.write(f"\ud68c\uc758\uc77c: {fmt_date(meeting.meeting_date)}")
-                st.write(f"\uc2e0\ub8b0\ub3c4: {candidate.get('confidence') or '\ud655\uc778 \ud544\uc694'}")
+                st.write(f"신뢰도: {confidence}")
                 with st.form(f"schedule_candidate_form_{meeting.id}_{idx}"):
                     input_title = st.text_input("\uc77c\uc815 \uc81c\ubaa9", value=title)
                     input_date = st.date_input("\uc2dc\uc791\uc77c", value=default_date)
