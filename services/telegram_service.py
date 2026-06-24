@@ -70,7 +70,7 @@ def send_message(text: str, chat_id: str | None = None) -> bool:
         r = requests.post(
             f"https://api.telegram.org/bot{token}/sendMessage",
             json={"chat_id": cid, "text": text, "parse_mode": "HTML"},
-            timeout=10,
+            timeout=30,
         )
         if not r.ok:
             print(f"Telegram send failed: HTTP {r.status_code} {r.text[:200]}")
