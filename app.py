@@ -1512,6 +1512,98 @@ def _save_analysis(db, record: MeetingRecord, result: dict) -> None:
 
 # ─── 미팅 요약 결과 ────────────────────────────────────────────────────────────
 
+ANALYSIS_JSON_FIELDS = [
+    "meeting_overview",
+    "topic_discussions",
+    "key_discussions",
+    "decisions",
+    "customer_needs",
+    "complaints",
+    "price_mentions",
+    "competitor_mentions",
+    "promises_raw",
+    "follow_ups",
+    "action_items_structured",
+    "pending_items",
+    "risk_factors",
+    "risks_and_checks",
+    "next_meeting_questions",
+    "sales_opportunities",
+    "relationship_notes",
+    "schedule_candidates",
+]
+
+
+def _update_analysis_result(analysis: MeetingAnalysis, result: dict, *, schedule_only: bool = False) -> None:
+    if schedule_only:
+        existing = _json_list(getattr(analysis, "schedule_candidates", None))
+        state_by_key = {
+            (item.get("date"), item.get("title")): {
+                key: item.get(key)
+                for key in ("saved", "ignored")
+                if item.get(key) is not None
+            }
+            for item in existing
+            if isinstance(item, dict)
+        }
+        candidates = []
+        for item in result.get("schedule_candidates", []):
+            if isinstance(item, dict):
+                candidates.append({**item, **state_by_key.get((item.get("date"), item.get("title")), {})})
+        analysis.schedule_candidates = candidates
+        flag_modified(analysis, "schedule_candidates")
+        return
+
+    analysis.one_line_summary = result.get("one_line_summary")
+    analysis.detailed_summary = result.get("detailed_summary")
+    analysis.meeting_overview = result.get("meeting_overview", {})
+    analysis.topic_discussions = result.get("topic_discussions", [])
+    analysis.key_discussions = result.get("key_discussions", [])
+    analysis.decisions = result.get("decisions", [])
+    analysis.customer_needs = result.get("customer_needs", [])
+    analysis.complaints = result.get("complaints", [])
+    analysis.price_mentions = result.get("price_mentions", [])
+    analysis.competitor_mentions = result.get("competitor_mentions", [])
+    analysis.promises_raw = result.get("promises", [])
+    analysis.follow_ups = result.get("follow_ups", [])
+    analysis.action_items_structured = result.get("action_items_structured", [])
+    analysis.pending_items = result.get("pending_items", [])
+    analysis.risk_factors = result.get("risk_factors", [])
+    analysis.risks_and_checks = result.get("risks_and_checks", [])
+    analysis.next_meeting_questions = result.get("next_meeting_questions", [])
+    analysis.sales_opportunities = result.get("sales_opportunities", [])
+    analysis.relationship_notes = result.get("relationship_notes", [])
+    analysis.schedule_candidates = result.get("schedule_candidates", [])
+    analysis.trust_score = result.get("trust_score", 50)
+    analysis.risk_score = result.get("risk_score", 50)
+    for field in ANALYSIS_JSON_FIELDS:
+        flag_modified(analysis, field)
+
+
+def _reanalyze_meeting(db, meeting: MeetingRecord, *, schedule_only: bool = False) -> None:
+    if not meeting.raw_text or not meeting.raw_text.strip():
+        raise ValueError("재분석할 원문 회의록이 없습니다.")
+
+    prev = (
+        db.query(MeetingRecord)
+        .options(joinedload(MeetingRecord.analysis))
+        .filter(
+            MeetingRecord.company_id == meeting.company_id,
+            MeetingRecord.id != meeting.id,
+        )
+        .order_by(desc(MeetingRecord.meeting_date))
+        .limit(3)
+        .all()
+    )
+    result = analyze_meeting_transcript(meeting.raw_text, prev_meetings=prev)
+    if meeting.analysis:
+        _update_analysis_result(meeting.analysis, result, schedule_only=schedule_only)
+    else:
+        _save_analysis(db, meeting, result)
+        return
+    db.commit()
+
+
 def _json_list(value) -> list:
     if not value:
         return []
@@ -1875,6 +1967,25 @@ def page_meeting_results():
 
         a = sel_meeting.analysis
         company = sel_meeting.company
+        with st.expander("AI 재분석 옵션", expanded=False):
+            st.caption("등록된 액션아이템, 약속사항, 일정은 유지하고 AI 분석 결과만 갱신합니다.")
+            re_col1, re_col2 = st.columns(2)
+            if re_col1.button("전체 재분석", type="primary", use_container_width=True):
+                with st.spinner("회의록 전체를 다시 분석 중입니다..."):
+                    try:
+                        _reanalyze_meeting(db, sel_meeting, schedule_only=False)
+                        st.toast("전체 재분석이 완료되었습니다.", icon="✅")
+                        st.rerun()
+                    except Exception as e:
+                        st.toast(f"재분석 오류: {e}", icon="❌")
+            if re_col2.button("일정 후보만 재추출", use_container_width=True):
+                with st.spinner("일정 후보만 다시 추출 중입니다..."):
+                    try:
+                        _reanalyze_meeting(db, sel_meeting, schedule_only=True)
+                        st.toast("일정 후보를 다시 추출했습니다.", icon="🧭")
+                        st.rerun()
+                    except Exception as e:
+                        st.toast(f"일정 후보 재추출 오류: {e}", icon="❌")
         _render_enhanced_meeting_result(db, sel_meeting)
         return
 
