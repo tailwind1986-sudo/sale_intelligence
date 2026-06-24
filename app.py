@@ -672,6 +672,49 @@ def company_progress_summary(company: Company) -> str:
     ])
 
 
+def _is_closed_status(status: str | None) -> bool:
+    return (status or "").strip() in {"완료", "종결", "취소", "불이행"}
+
+
+def company_current_status_snapshot(company: Company) -> dict:
+    meetings = sorted(
+        [m for m in company.meetings if m.meeting_date],
+        key=lambda m: m.meeting_date,
+        reverse=True,
+    )
+    latest = meetings[0] if meetings else None
+    analysis = latest.analysis if latest else None
+    open_actions = [a for a in company.action_items if not _is_closed_status(a.status)]
+    open_promises = [p for p in company.promises if not _is_closed_status(p.status)]
+
+    status = analysis.one_line_summary if analysis and analysis.one_line_summary else (company.memo or "최근 회의록 기반 요약 없음")
+
+    next_items: list[str] = []
+    if analysis:
+        next_items.extend(_as_list(analysis.follow_ups)[:2])
+        next_items.extend(_as_list(analysis.pending_items)[:2])
+    next_items.extend(a.content for a in sorted(open_actions, key=lambda a: a.due_date or date.max)[:2])
+
+    risks: list[str] = []
+    if analysis:
+        risks.extend(_as_list(analysis.risk_factors)[:2])
+        risks.extend(_as_list(analysis.risks_and_checks)[:2])
+    risks.extend(p.content for p in open_promises[:2])
+
+    return {
+        "company": company.name,
+        "stage": company.sales_stage or "-",
+        "risk_level": company.risk_level or "-",
+        "latest_date": fmt_date(latest.meeting_date) if latest else "-",
+        "current_status": _shorten(status, 90),
+        "next_action": _shorten(next_items[0], 80) if next_items else "-",
+        "risk_or_check": _shorten(risks[0], 80) if risks else "-",
+        "open_actions": len(open_actions),
+        "open_promises": len(open_promises),
+        "latest_meeting": latest,
+    }
+
+
 SALES_STAGES = ["잠재", "접촉", "제안", "협상", "계약", "완료", "보류"]
 BUSINESS_TYPES = ["CSO", "TLD", "기타"]
 MEETING_TYPES = ["방문", "전화", "온라인", "기타"]
@@ -910,17 +953,34 @@ def page_dashboard():
             .all()
         )
         progress_rows = [
-            {
-                "업체": c.name,
-                "영업단계": c.sales_stage or "-",
-                "리스크": c.risk_level or "-",
-                "진행현황": company_progress_summary(c),
-            }
+            company_current_status_snapshot(c)
             for c in companies_progress
             if c.meetings or c.action_items or c.promises
         ]
         if progress_rows:
-            st.dataframe(pd.DataFrame(progress_rows), hide_index=True, use_container_width=True)
+            st.dataframe(
+                pd.DataFrame([
+                    {
+                        "업체": r["company"],
+                        "영업단계": r["stage"],
+                        "리스크": r["risk_level"],
+                        "최근회의": r["latest_date"],
+                        "현재상황": r["current_status"],
+                        "다음액션": r["next_action"],
+                        "확인/리스크": r["risk_or_check"],
+                    }
+                    for r in progress_rows
+                ]),
+                hide_index=True,
+                use_container_width=True,
+            )
+
+            with st.expander("업체별 상세 진행 메모", expanded=False):
+                for r in progress_rows:
+                    st.markdown(f"**{r['company']}** · 최근 {r['latest_date']} · 액션 {r['open_actions']}건 · 약속 {r['open_promises']}건")
+                    st.write(f"- 현재상황: {r['current_status']}")
+                    st.write(f"- 다음액션: {r['next_action']}")
+                    st.write(f"- 확인/리스크: {r['risk_or_check']}")
         else:
             st.info("회의록이나 진행 항목이 쌓이면 업체별 진행현황이 표시됩니다.")
 
@@ -2076,6 +2136,12 @@ def page_timeline():
         col2.metric("사업구분", sel_company.business_type or "-")
         col3.metric("중요도", sel_company.importance or "-")
         col4.metric("총 미팅", len(sel_company.meetings))
+
+        snapshot = company_current_status_snapshot(sel_company)
+        st.markdown("**현재상황 요약**")
+        st.write(f"- 현재상황: {snapshot['current_status']}")
+        st.write(f"- 다음액션: {snapshot['next_action']}")
+        st.write(f"- 확인/리스크: {snapshot['risk_or_check']}")
 
         # 고객 취향 정보 요약
         infos = db.query(CustomerInfo).filter(CustomerInfo.company_id == sel_company.id).all()
