@@ -148,7 +148,6 @@ def _local_storage_autologin_script() -> str:
       const token = window.parent.localStorage.getItem("sales_auth_token");
       const url = new URL(window.parent.location.href);
       if (token && !url.searchParams.get("auth")) {
-        doc.body.style.opacity = "0.35";
         url.searchParams.set("auth", token);
         window.parent.location.replace(url.toString());
       }
