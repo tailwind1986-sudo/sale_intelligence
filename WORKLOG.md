@@ -242,3 +242,26 @@
   - `python -m py_compile app.py` 통과
 - 서버 반영:
   - 아직 하지 않음
+### Streamlit 제거 5단계. 미팅 요약 결과 조회
+
+- 상태: 완료
+- 변경 파일: `mobile_api.py`, `workspace_app/index.html`, `workspace_app/app.js`
+- 구현 내용:
+  - `/mobile/api/meetings` 미팅 요약 목록 API 추가
+  - `/mobile/api/meetings/{meeting_id}` 미팅 요약 상세 API 추가
+  - workspace에 `미팅요약` 탭 추가
+  - 회의 개요, 전체 요약, 핵심 논의, 결정사항, 후속 조치, 리스크, 카톡/문자 보고, 고객 관계 정보, 원문 확인 영역 추가
+  - 고객 관계 정보 저장 API 추가
+  - 미팅 기록 삭제 API 추가
+- 빠진 기능 검증:
+  - 기존 Streamlit 미팅 요약 결과의 결과 조회, 카톡/문자 보고 복사, 고객 관계 정보 저장, 원문 확인, 삭제 흐름 대응
+  - AI 실행/재분석/업로드는 6단계에서 별도 이관
+- 보존 사항:
+  - 기존 Streamlit 미팅 요약 결과 화면 유지
+  - 기존 DB 스키마 변경 없음
+- 검증:
+  - `python -m py_compile mobile_api.py` 통과
+  - `ast.parse(..., feature_version=(3,10))` 통과
+  - `node --check workspace_app\app.js` 통과
+- 서버 반영:
+  - 아직 하지 않음

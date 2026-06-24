@@ -22,6 +22,7 @@
       <button data-view="actions">액션/약속</button>
       <button data-view="companies">고객사</button>
       <button data-view="candidates">일정 후보</button>
+      <button data-view="meetings">미팅요약</button>
     </nav>
 
     <section id="viewDashboard" class="view">
@@ -116,6 +117,22 @@
           </select>
         </div>
         <div id="candidateList" class="list"></div>
+      </section>
+    </section>
+
+    <section id="viewMeetings" class="view hidden">
+      <section class="panel">
+        <div class="panel-head">
+          <h2>미팅 요약 결과</h2>
+        </div>
+        <div class="filters">
+          <input id="meetingSearch" placeholder="회의록/요약 검색" />
+          <select id="meetingCompany"></select>
+        </div>
+        <div class="split">
+          <div id="meetingList" class="list"></div>
+          <div id="meetingDetail" class="detail-box"></div>
+        </div>
       </section>
     </section>
 

@@ -15,6 +15,8 @@ const state = {
   actions: [],
   promises: [],
   candidates: [],
+  meetings: [],
+  selectedMeeting: null,
   view: "dashboard",
 };
 
@@ -508,9 +510,97 @@ function candidatePayloadFromForm(form) {
   };
 }
 
+async function loadMeetings() {
+  const params = new URLSearchParams();
+  if ($("meetingSearch").value.trim()) params.set("q", $("meetingSearch").value.trim());
+  if ($("meetingCompany").value) params.set("company_id", $("meetingCompany").value);
+  state.meetings = await api(`/api/meetings?${params}`) || [];
+  renderMeetings();
+}
+
+function renderMeetings() {
+  if (!state.meetings.length) {
+    $("meetingList").innerHTML = `<p class="empty">미팅 기록이 없습니다.</p>`;
+    $("meetingDetail").innerHTML = "";
+    return;
+  }
+  $("meetingList").innerHTML = state.meetings.map(row => `
+    <button class="company-card" data-meeting-open="${row.id}">
+      <strong>${escapeHtml(row.company)}</strong>
+      <span>${escapeHtml([row.meeting_date, row.meeting_type, row.has_analysis ? "분석완료" : "미분석"].filter(Boolean).join(" · "))}</span>
+      <small>${escapeHtml(row.summary || "요약 없음")}</small>
+    </button>
+  `).join("");
+}
+
+async function openMeeting(meetingId) {
+  const detail = await api(`/api/meetings/${meetingId}`);
+  if (!detail) return;
+  state.selectedMeeting = detail;
+  $("meetingDetail").innerHTML = renderMeetingDetail(detail);
+}
+
+function listBlock(title, rows, formatter = item => String(item)) {
+  const body = rows && rows.length
+    ? rows.map(item => `<li>${escapeHtml(formatter(item))}</li>`).join("")
+    : `<li class="empty">없음</li>`;
+  return `<div class="detail-section"><h3>${title}</h3><ul>${body}</ul></div>`;
+}
+
+function renderTopic(item) {
+  if (typeof item === "object") {
+    return `${item.topic || "주제"}: ${item.discussion || item.current_status || item.needs_review || "-"}`;
+  }
+  return String(item);
+}
+
+function renderMeetingDetail(m) {
+  const a = m.analysis;
+  if (!a) {
+    return `
+      <div class="detail-head">
+        <div><h3>${escapeHtml(m.company)}</h3><p>${escapeHtml(m.meeting_date || "-")}</p></div>
+        <button class="danger-btn" data-meeting-delete="${m.id}">삭제</button>
+      </div>
+      <p class="empty">아직 AI 분석 결과가 없습니다. 업로드/AI 분석 단계에서 분석을 실행하세요.</p>
+      <div class="detail-section"><h3>원문</h3><p class="meta">${escapeHtml((m.raw_text || "").slice(0, 600))}</p></div>
+    `;
+  }
+  return `
+    <div class="detail-head">
+      <div>
+        <h3>${escapeHtml(m.company)}</h3>
+        <p>${escapeHtml([m.meeting_date, m.meeting_type, `신뢰 ${a.trust_score}`, `위험 ${a.risk_score}`].filter(Boolean).join(" · "))}</p>
+      </div>
+      <button class="danger-btn" data-meeting-delete="${m.id}">삭제</button>
+    </div>
+    <p class="title">${escapeHtml(a.one_line_summary || "한 줄 결론 없음")}</p>
+    <div class="detail-section"><h3>전체 요약</h3><p>${escapeHtml(a.detailed_summary || "-")}</p></div>
+    ${listBlock("핵심 논의", a.topic_discussions || [], renderTopic)}
+    ${listBlock("결정사항", a.decisions || [])}
+    ${listBlock("후속조치", a.action_items_structured || [], item => typeof item === "object" ? `${item.task || item.content || "-"} / ${item.assignee || "담당자 확인"} / ${item.due_date || "기한 확인"}` : String(item))}
+    ${listBlock("리스크/확인", a.risks_and_checks || [])}
+    <div class="detail-section">
+      <h3>카톡/문자 보고</h3>
+      <textarea readonly>${escapeHtml(m.compact_report || "")}</textarea>
+    </div>
+    <div class="detail-section">
+      <h3>고객 관계 정보</h3>
+      ${(a.relationship_notes || []).map((row, idx) => `
+        <div class="mini-row">
+          <div><strong>${escapeHtml(row.person_or_company || "-")}</strong><span>${escapeHtml([row.category, row.content, row.use_point].filter(Boolean).join(" · "))}</span></div>
+          <button data-relation-save="${idx}" class="small-primary">고객정보 저장</button>
+        </div>
+      `).join("") || `<p class="empty">추출된 고객 관계 정보가 없습니다.</p>`}
+    </div>
+    <div class="detail-section"><h3>원문</h3><p class="meta">${escapeHtml((m.raw_text || "").slice(0, 1000))}</p></div>
+  `;
+}
+
 async function refreshCompanyOptions() {
   state.companies = await api("/api/companies") || [];
   renderActionFilters();
+  $("meetingCompany").innerHTML = companyOptions($("meetingCompany").value);
 }
 
 function setView(view) {
@@ -519,6 +609,7 @@ function setView(view) {
   $("viewActions").classList.toggle("hidden", view !== "actions");
   $("viewCompanies").classList.toggle("hidden", view !== "companies");
   $("viewCandidates").classList.toggle("hidden", view !== "candidates");
+  $("viewMeetings").classList.toggle("hidden", view !== "meetings");
   for (const btn of document.querySelectorAll(".tabs button")) {
     btn.classList.toggle("active", btn.dataset.view === view);
   }
@@ -528,6 +619,7 @@ function setView(view) {
   }
   if (view === "companies") loadCompanies();
   if (view === "candidates") loadCandidates();
+  if (view === "meetings") loadMeetings();
 }
 
 function bindEvents() {
@@ -553,6 +645,11 @@ function bindEvents() {
   $("companyStageFilter").onchange = loadCompanies;
   $("companyRiskFilter").onchange = loadCompanies;
   $("candidateState").onchange = loadCandidates;
+  $("meetingCompany").onchange = loadMeetings;
+  $("meetingSearch").oninput = () => {
+    clearTimeout(window.__meetingSearchTimer);
+    window.__meetingSearchTimer = setTimeout(loadMeetings, 250);
+  };
   document.addEventListener("click", async event => {
     const target = event.target;
     if (target.matches("[data-cancel-form]")) target.closest("form").classList.add("hidden");
@@ -609,6 +706,20 @@ function bindEvents() {
       await api(`/api/schedule-candidates/${row.meeting_id}/${row.index}/ignore`, { method: "POST" });
       await loadCandidates();
     }
+    const meetingOpen = target.closest("[data-meeting-open]")?.dataset.meetingOpen;
+    if (meetingOpen) await openMeeting(meetingOpen);
+    const relationSave = target.dataset.relationSave;
+    if (relationSave && state.selectedMeeting) {
+      await api(`/api/meetings/${state.selectedMeeting.id}/relationship-notes/${relationSave}/save`, { method: "POST" });
+      alert("고객 정보로 저장했습니다.");
+    }
+    const meetingDelete = target.dataset.meetingDelete;
+    if (meetingDelete && confirm("이 미팅 기록을 삭제할까요? 분석/약속/액션도 함께 삭제됩니다.")) {
+      await api(`/api/meetings/${meetingDelete}`, { method: "DELETE" });
+      $("meetingDetail").innerHTML = "";
+      await loadMeetings();
+      await loadDashboard();
+    }
   });
   document.addEventListener("submit", async event => {
     const formIndex = event.target.dataset.candidateForm;
@@ -653,6 +764,7 @@ async function load() {
     state.companies = await api("/api/companies") || [];
     renderActionFilters();
     renderCompanyFilters();
+    $("meetingCompany").innerHTML = companyOptions("");
     bindEvents();
     await loadDashboard();
   } catch (err) {

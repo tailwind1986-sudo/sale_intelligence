@@ -501,6 +501,46 @@ def _brief_text(value: str | None, limit: int = 90) -> str:
     return text[:limit] + ("…" if len(text) > limit else "")
 
 
+def _json_list(value) -> list:
+    if not value:
+        return []
+    if isinstance(value, list):
+        return value
+    if isinstance(value, dict):
+        return [value]
+    return [value]
+
+
+def _json_dict(value) -> dict:
+    return value if isinstance(value, dict) else {}
+
+
+def _compact_meeting_report(meeting: MeetingRecord) -> str:
+    analysis = meeting.analysis
+    company = meeting.company.name if meeting.company else "-"
+    meeting_date = meeting.meeting_date.isoformat() if meeting.meeting_date else "-"
+    if not analysis:
+        return f"[미팅보고] {company} / {meeting_date}\n\n주요논의\n- 분석 결과 대기"
+    lines = [f"[미팅보고] {company} / {meeting_date}", "", "주요논의"]
+    topics = _json_list(getattr(analysis, "topic_discussions", None))
+    if topics:
+        for item in topics[:5]:
+            if isinstance(item, dict):
+                topic = item.get("topic") or "주요 논의"
+                desc = item.get("discussion") or item.get("current_status") or item.get("needs_review") or ""
+                lines.append(f"- {topic}: {_brief_text(desc, 80)}")
+            else:
+                lines.append(f"- {_brief_text(str(item), 90)}")
+    else:
+        for item in _json_list(analysis.key_discussions)[:5]:
+            lines.append(f"- {_brief_text(str(item), 90)}")
+    checks = _json_list(getattr(analysis, "risks_and_checks", None)) or _json_list(analysis.pending_items)
+    if checks:
+        lines.extend(["", "확인필요"])
+        lines.extend(f"- {_brief_text(str(item), 90)}" for item in checks[:3])
+    return "\n".join(lines)
+
+
 def _parse_ai_date(value):
     if not value or str(value).strip() in {"확인 필요", "null", "None", "-"}:
         return None
@@ -861,6 +901,123 @@ def ignore_schedule_candidate(meeting_id: int, index: int, db: Session = Depends
     if not meeting or not meeting.analysis:
         raise HTTPException(status_code=404, detail="Meeting not found")
     _update_schedule_candidate_state(meeting, index, ignored=True)
+    db.commit()
+    return {"ok": True}
+
+
+@app.get("/api/meetings", dependencies=[Depends(_require_auth)])
+def list_meeting_results(q: str = "", company_id: int | None = None, db: Session = Depends(get_db)):
+    query = db.query(MeetingRecord).options(
+        joinedload(MeetingRecord.company),
+        joinedload(MeetingRecord.analysis),
+        joinedload(MeetingRecord.action_items),
+        joinedload(MeetingRecord.promises),
+    )
+    if company_id:
+        query = query.filter(MeetingRecord.company_id == company_id)
+    if q:
+        like = f"%{q}%"
+        query = query.filter(
+            (MeetingRecord.raw_text.ilike(like)) |
+            (MeetingRecord.memo.ilike(like)) |
+            (MeetingRecord.attendees.ilike(like)) |
+            (MeetingRecord.analysis.has(MeetingAnalysis.one_line_summary.ilike(like)))
+        )
+    rows = query.order_by(MeetingRecord.meeting_date.desc(), MeetingRecord.created_at.desc()).limit(200).all()
+    return [
+        {
+            "id": m.id,
+            "company": m.company.name if m.company else "",
+            "company_id": m.company_id,
+            "meeting_date": m.meeting_date.isoformat() if m.meeting_date else "",
+            "meeting_type": m.meeting_type or "",
+            "attendees": m.attendees or "",
+            "summary": _brief_text(m.analysis.one_line_summary if m.analysis else m.memo, 120),
+            "has_analysis": bool(m.analysis),
+            "actions": len(m.action_items),
+            "promises": len(m.promises),
+        }
+        for m in rows
+    ]
+
+
+@app.get("/api/meetings/{meeting_id}", dependencies=[Depends(_require_auth)])
+def meeting_detail(meeting_id: int, db: Session = Depends(get_db)):
+    meeting = (
+        db.query(MeetingRecord)
+        .options(
+            joinedload(MeetingRecord.company),
+            joinedload(MeetingRecord.analysis),
+            joinedload(MeetingRecord.action_items),
+            joinedload(MeetingRecord.promises),
+        )
+        .filter(MeetingRecord.id == meeting_id)
+        .first()
+    )
+    if not meeting:
+        raise HTTPException(status_code=404, detail="Meeting not found")
+    a = meeting.analysis
+    return {
+        "id": meeting.id,
+        "company": meeting.company.name if meeting.company else "",
+        "company_id": meeting.company_id,
+        "meeting_date": meeting.meeting_date.isoformat() if meeting.meeting_date else "",
+        "meeting_type": meeting.meeting_type or "",
+        "attendees": meeting.attendees or "",
+        "memo": meeting.memo or "",
+        "raw_text": meeting.raw_text or "",
+        "compact_report": _compact_meeting_report(meeting),
+        "analysis": None if not a else {
+            "one_line_summary": a.one_line_summary or "",
+            "detailed_summary": a.detailed_summary or "",
+            "meeting_overview": _json_dict(a.meeting_overview),
+            "topic_discussions": _json_list(a.topic_discussions),
+            "decisions": _json_list(a.decisions),
+            "action_items_structured": _json_list(a.action_items_structured),
+            "risks_and_checks": _json_list(a.risks_and_checks) or _json_list(a.risk_factors),
+            "relationship_notes": _json_list(a.relationship_notes),
+            "schedule_candidates": _json_list(a.schedule_candidates),
+            "trust_score": a.trust_score or 0,
+            "risk_score": a.risk_score or 0,
+        },
+        "actions": [_action_to_dict(row) for row in meeting.action_items],
+        "promises": [_promise_to_dict(row) for row in meeting.promises],
+    }
+
+
+@app.post("/api/meetings/{meeting_id}/relationship-notes/{index}/save", dependencies=[Depends(_require_auth)])
+def save_meeting_relationship_note(meeting_id: int, index: int, db: Session = Depends(get_db)):
+    meeting = (
+        db.query(MeetingRecord)
+        .options(joinedload(MeetingRecord.company), joinedload(MeetingRecord.analysis))
+        .filter(MeetingRecord.id == meeting_id)
+        .first()
+    )
+    if not meeting or not meeting.analysis:
+        raise HTTPException(status_code=404, detail="Meeting not found")
+    notes = _json_list(meeting.analysis.relationship_notes)
+    if index < 0 or index >= len(notes) or not isinstance(notes[index], dict):
+        raise HTTPException(status_code=404, detail="Relationship note not found")
+    note = notes[index]
+    sensitivity = note.get("sensitivity") or "낮음"
+    db.add(CustomerInfo(
+        company_id=meeting.company_id,
+        category=note.get("category") or "고객 관계 정보",
+        key=note.get("person_or_company") or meeting.company.name,
+        value=note.get("content") or "",
+        importance="높음" if sensitivity == "높음" else "보통",
+        notes=f"활용 포인트: {note.get('use_point') or ''}\n민감도: {sensitivity}\n출처: {meeting.meeting_date.isoformat() if meeting.meeting_date else '-'} 회의록",
+    ))
+    db.commit()
+    return {"ok": True}
+
+
+@app.delete("/api/meetings/{meeting_id}", dependencies=[Depends(_require_auth)])
+def delete_meeting(meeting_id: int, db: Session = Depends(get_db)):
+    meeting = db.get(MeetingRecord, meeting_id)
+    if not meeting:
+        raise HTTPException(status_code=404, detail="Meeting not found")
+    db.delete(meeting)
     db.commit()
     return {"ok": True}
 
