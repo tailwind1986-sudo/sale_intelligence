@@ -82,18 +82,38 @@ def _password_matches(password: str) -> bool:
     return False
 
 
+def _get_cookie_manager():
+    try:
+        import extra_streamlit_components as stx
+        return stx.CookieManager(key="sales_cookie_mgr")
+    except Exception:
+        return None
+
+
 def require_login() -> None:
     if st.session_state.get("authenticated"):
         return
 
     configured = bool(_get_secret("APP_PASSWORD_HASH") or _get_secret("APP_PASSWORD"))
-    st.title("Sales Intelligence")
 
     if not configured:
+        st.title("Sales Intelligence")
         st.error("로그인 비밀번호가 설정되지 않았습니다.")
-        st.info("운영 환경에서는 APP_PASSWORD_HASH, 로컬에서는 APP_PASSWORD 또는 APP_PASSWORD_HASH를 설정해주세요.")
         st.stop()
 
+    # 쿠키로 자동 로그인 확인
+    cookie_mgr = _get_cookie_manager()
+    if cookie_mgr is not None:
+        try:
+            token_in_cookie = cookie_mgr.get("sales_auth_token")
+            if token_in_cookie and token_in_cookie == _mobile_auth_token():
+                st.session_state["authenticated"] = True
+                st.session_state["auth_user"] = _get_secret("APP_USERNAME", "admin")
+                return
+        except Exception:
+            pass
+
+    st.title("Sales Intelligence")
     with st.form("login_form"):
         username = st.text_input("아이디", value=_get_secret("APP_USERNAME", "admin"))
         password = st.text_input("비밀번호", type="password")
@@ -134,6 +154,17 @@ def require_login() -> None:
         if username_ok and _password_matches(password):
             st.session_state["authenticated"] = True
             st.session_state["auth_user"] = expected_username
+            # 쿠키에 토큰 저장 (30일)
+            if cookie_mgr is not None:
+                try:
+                    from datetime import timedelta
+                    cookie_mgr.set(
+                        "sales_auth_token",
+                        _mobile_auth_token(),
+                        expires_at=datetime.now() + timedelta(days=30),
+                    )
+                except Exception:
+                    pass
             st.rerun()
         else:
             st.error("아이디 또는 비밀번호가 올바르지 않습니다.")
