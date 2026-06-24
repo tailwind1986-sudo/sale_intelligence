@@ -326,6 +326,28 @@ textarea {
   font-size: 0.85rem;
 }
 
+.quick-add {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 58px;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.quick-add input {
+  min-height: 42px;
+  border-radius: 12px;
+  font-size: 0.88rem;
+}
+
+.quick-add button {
+  min-height: 42px;
+  border-radius: 12px;
+  background: #111827;
+  color: #fff;
+  font-size: 0.86rem;
+  font-weight: 900;
+}
+
 .round {
   flex: 0 0 auto;
   width: 50px;

@@ -7,7 +7,7 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="default" />
   <meta name="theme-color" content="#ffffff" />
   <link rel="manifest" href="/mobile/static/manifest.webmanifest" />
-  <link rel="stylesheet" href="/mobile/static/styles.css?v=20260624-tt9" />
+  <link rel="stylesheet" href="/mobile/static/styles.css?v=20260624-tt10" />
   <title>Sales Calendar</title>
 </head>
 <body>
@@ -53,6 +53,10 @@
           </div>
           <button id="addBtn" class="round" aria-label="일정 추가">+</button>
         </div>
+        <form id="quickAddForm" class="quick-add" autocomplete="off">
+          <input id="quickTitle" placeholder="빠른 일정 입력  예: 오후 3시 고객 미팅" />
+          <button type="submit">등록</button>
+        </form>
         <div id="dayItems" class="day-items"></div>
       </section>
 
@@ -122,6 +126,6 @@
       <p id="editorError" class="error"></p>
     </section>
   </main>
-  <script src="/mobile/static/app.js?v=20260624-tt9"></script>
+  <script src="/mobile/static/app.js?v=20260624-tt10"></script>
 </body>
 </html>

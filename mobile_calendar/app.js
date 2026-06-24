@@ -545,6 +545,53 @@ function syncEndTimeToStart(force = false) {
   if (!next.nextDay && !state.endDateTouched) $("endDate").value = $("startDate").value;
 }
 
+function parseQuickSchedule(text) {
+  let title = String(text || "").trim();
+  const result = { title, allDay: true, startTime: null, endTime: null, endDate: state.selectedDate };
+  const timePattern = /^(오전|오후)?\s*(\d{1,2})(?::(\d{2}))?\s*시?\s*(.*)$/;
+  const matched = title.match(timePattern);
+  if (!matched) return result;
+
+  let hour = Number(matched[2]);
+  const minute = Number(matched[3] || "0");
+  const period = matched[1] || "";
+  const rest = (matched[4] || "").trim();
+  if (period === "오후" && hour < 12) hour += 12;
+  if (period === "오전" && hour === 12) hour = 0;
+  if (hour > 23 || minute > 59 || !rest) return result;
+
+  const startTime = `${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`;
+  const next = addOneHour(startTime);
+  result.title = rest;
+  result.allDay = false;
+  result.startTime = startTime;
+  result.endTime = next.time;
+  result.endDate = next.nextDay ? addDays(state.selectedDate, 1) : state.selectedDate;
+  return result;
+}
+
+async function quickAddSchedule(event) {
+  event.preventDefault();
+  const quick = parseQuickSchedule($("quickTitle").value);
+  if (!quick.title) return;
+  const payload = {
+    title: quick.title,
+    description: null,
+    start_date: state.selectedDate,
+    end_date: quick.endDate,
+    start_time: quick.allDay ? null : quick.startTime,
+    end_time: quick.allDay ? null : quick.endTime,
+    all_day: quick.allDay,
+    color: "#3B82F6",
+    company_id: state.companyId ? Number(state.companyId) : null,
+    remind_enabled: true,
+    remind_minutes: quick.allDay ? 1440 : 60,
+  };
+  await api("/api/schedules", { method: "POST", body: JSON.stringify(payload) });
+  $("quickTitle").value = "";
+  await loadMonth();
+}
+
 async function saveSchedule() {
   $("editorError").textContent = "";
   const payload = {
@@ -622,6 +669,7 @@ $("monthJump").onclick = goToday;
 $("todayBtn").onclick = goToday;
 $("companyFilter").onchange = async e => { state.companyId = e.target.value; await loadMonth(); };
 $("addBtn").onclick = () => openEditor();
+$("quickAddForm").addEventListener("submit", quickAddSchedule);
 $("allDay").onchange = () => { toggleTimeFields(); syncEndTimeToStart(true); };
 $("startDate").onchange = () => { syncEndDateToStart(true); syncEndTimeToStart(true); };
 $("endDate").onchange = () => { state.endDateTouched = true; };
@@ -635,7 +683,7 @@ for (const btn of document.querySelectorAll(".bottom-nav button")) {
 for (const btn of document.querySelectorAll(".back")) btn.onclick = () => show(btn.dataset.target);
 
 if ("serviceWorker" in navigator) {
-  navigator.serviceWorker.register(`${BASE}/sw.js?v=20260624-tt9`, { scope: `${BASE}/` }).then(reg => reg.update()).catch(() => {});
+  navigator.serviceWorker.register(`${BASE}/sw.js?v=20260624-tt10`, { scope: `${BASE}/` }).then(reg => reg.update()).catch(() => {});
 }
 
 consumeUrlAuth();
