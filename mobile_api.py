@@ -167,6 +167,13 @@ app.mount("/mobile/static", StaticFiles(directory=STATIC_DIR), name="mobile_stat
 app.mount("/mobile/workspace/static", StaticFiles(directory=WORKSPACE_DIR), name="mobile_workspace_static")
 
 
+@app.middleware("http")
+async def mobile_api_alias(request, call_next):
+    if request.scope.get("path", "").startswith("/mobile/api/"):
+        request.scope["path"] = request.scope["path"].replace("/mobile/api/", "/api/", 1)
+    return await call_next(request)
+
+
 @app.on_event("startup")
 def on_startup() -> None:
     create_database()
