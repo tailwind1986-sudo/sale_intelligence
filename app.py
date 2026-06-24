@@ -1866,7 +1866,7 @@ def _schedule_form(db, companies_all, form_key, default_date=None,
         "color_label": next((k for k, v in EVENT_COLORS.items() if editing and v == editing.color), "파랑"),
         "company_id": editing.company_id if editing else None,
         "remind_enabled": editing.remind_enabled if editing else True,
-        "remind_label": next((k for k, v in REMIND_OPTIONS.items() if editing and v == editing.remind_minutes), "하루 전"),
+        "remind_label": next((k for k, v in REMIND_OPTIONS.items() if editing and v == editing.remind_minutes), "30분 전"),
     }
     for suffix, value in defaults.items():
         st.session_state.setdefault(f"{form_key}_{suffix}", value)
