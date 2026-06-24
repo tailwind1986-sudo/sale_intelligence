@@ -79,6 +79,30 @@
 - 서버 반영:
   - 아직 하지 않음
 
+### Streamlit 제거 4단계. AI 일정 후보 승인함
+
+- 상태: 완료
+- 변경 파일: `mobile_api.py`, `workspace_app/index.html`, `workspace_app/app.js`, `workspace_app/styles.css`
+- 구현 내용:
+  - `/mobile/api/schedule-candidates` 후보 목록 API 추가
+  - 후보 상태 필터 `대기/저장됨/무시됨/전체` 제공
+  - 후보별 제목, 시작일, 종료일, 프로젝트, 담당자, 장소, 비고 수정 후 일정표 저장
+  - 저장 시 기존 `Schedule` 테이블에 등록되어 캘린더와 텔레그램 알림 대상에 포함
+  - 후보 무시 처리 API 추가
+  - workspace에 `일정 후보` 탭 추가
+- 빠진 기능 검증:
+  - 기존 Streamlit AI 일정 후보 승인함의 대기 후보 조회, 저장, 무시 흐름 대응
+  - 기존 미팅 요약 결과 화면의 일정 후보 저장 원칙과 동일하게 자동 등록이 아닌 사용자 승인 후 저장
+- 보존 사항:
+  - 기존 Streamlit AI 일정 후보 승인함 유지
+  - 기존 DB 스키마 변경 없음
+- 검증:
+  - `python -m py_compile mobile_api.py` 통과
+  - `ast.parse(..., feature_version=(3,10))` 통과
+  - `node --check workspace_app\app.js` 통과
+- 서버 반영:
+  - 아직 하지 않음
+
 ### 1. 오늘/이번 주 실행 대시보드
 
 - 상태: 완료

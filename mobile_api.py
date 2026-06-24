@@ -18,11 +18,12 @@ from fastapi.staticfiles import StaticFiles
 from dotenv import load_dotenv
 from pydantic import BaseModel
 from sqlalchemy.orm import Session, joinedload
+from sqlalchemy.orm.attributes import flag_modified
 
 load_dotenv()
 
 from database.db import SessionLocal, create_database
-from database.models import ActionItem, Company, Contact, CustomerInfo, MeetingRecord, Promise, Schedule
+from database.models import ActionItem, Company, Contact, CustomerInfo, MeetingAnalysis, MeetingRecord, Promise, Schedule
 
 
 APP_DIR = Path(__file__).parent
@@ -500,6 +501,66 @@ def _brief_text(value: str | None, limit: int = 90) -> str:
     return text[:limit] + ("…" if len(text) > limit else "")
 
 
+def _parse_ai_date(value):
+    if not value or str(value).strip() in {"확인 필요", "null", "None", "-"}:
+        return None
+    try:
+        return datetime.strptime(str(value)[:10], "%Y-%m-%d").date()
+    except Exception:
+        return None
+
+
+def _schedule_candidate_exists(db: Session, meeting: MeetingRecord, candidate: dict) -> bool:
+    start_date = _parse_ai_date(candidate.get("date"))
+    title = (candidate.get("title") or "").strip()
+    if not start_date or not title:
+        return False
+    return db.query(Schedule).filter(
+        Schedule.company_id == meeting.company_id,
+        Schedule.title == title,
+        Schedule.start_dt >= datetime.combine(start_date, time.min),
+        Schedule.start_dt <= datetime.combine(start_date, time.max),
+    ).first() is not None
+
+
+def _add_schedule_candidate(db: Session, meeting: MeetingRecord, candidate: dict) -> Schedule:
+    start_date = _parse_ai_date(candidate.get("date"))
+    if not start_date:
+        raise HTTPException(status_code=400, detail="Schedule candidate date is required")
+    end_date = _parse_ai_date(candidate.get("end_date")) or start_date
+    title = (candidate.get("title") or "회의록 추출 일정").strip()
+    details = [
+        f"프로젝트: {candidate.get('project') or '확인 필요'}",
+        f"담당자: {candidate.get('assignee') or '확인 필요'}",
+        f"장소: {candidate.get('location') or '확인 필요'}",
+        f"비고: {candidate.get('note') or '-'}",
+        f"출처: {meeting.meeting_date.isoformat() if meeting.meeting_date else '-'} {meeting.company.name if meeting.company else ''} 회의록",
+    ]
+    row = Schedule(
+        title=title,
+        description="\n".join(details),
+        start_dt=datetime.combine(start_date, time(9, 0)),
+        end_dt=datetime.combine(end_date, time(18, 0)),
+        all_day=True,
+        color="#0EA5E9",
+        company_id=meeting.company_id,
+        remind_enabled=True,
+        remind_minutes=1440,
+    )
+    db.add(row)
+    return row
+
+
+def _update_schedule_candidate_state(meeting: MeetingRecord, index: int, **updates) -> None:
+    analysis = meeting.analysis
+    candidates = list(getattr(analysis, "schedule_candidates", None) or [])
+    if index < 0 or index >= len(candidates) or not isinstance(candidates[index], dict):
+        raise HTTPException(status_code=404, detail="Schedule candidate not found")
+    candidates[index] = {**candidates[index], **updates}
+    analysis.schedule_candidates = candidates
+    flag_modified(analysis, "schedule_candidates")
+
+
 @app.get("/api/dashboard", dependencies=[Depends(_require_auth)])
 def dashboard(db: Session = Depends(get_db)):
     now = datetime.now()
@@ -732,6 +793,74 @@ def delete_promise(promise_id: int, db: Session = Depends(get_db)):
     if not row:
         raise HTTPException(status_code=404, detail="Promise not found")
     db.delete(row)
+    db.commit()
+    return {"ok": True}
+
+
+@app.get("/api/schedule-candidates", dependencies=[Depends(_require_auth)])
+def list_schedule_candidates(state: str = "pending", db: Session = Depends(get_db)):
+    meetings = (
+        db.query(MeetingRecord)
+        .options(joinedload(MeetingRecord.company), joinedload(MeetingRecord.analysis))
+        .filter(MeetingRecord.analysis.has())
+        .order_by(MeetingRecord.meeting_date.desc(), MeetingRecord.created_at.desc())
+        .limit(250)
+        .all()
+    )
+    rows = []
+    for meeting in meetings:
+        candidates = list(getattr(meeting.analysis, "schedule_candidates", None) or [])
+        for index, candidate in enumerate(candidates):
+            if not isinstance(candidate, dict):
+                continue
+            saved = bool(candidate.get("saved") or _schedule_candidate_exists(db, meeting, candidate))
+            ignored = bool(candidate.get("ignored"))
+            row_state = "ignored" if ignored else ("saved" if saved else "pending")
+            if state != "all" and row_state != state:
+                continue
+            rows.append({
+                "meeting_id": meeting.id,
+                "index": index,
+                "state": row_state,
+                "company": meeting.company.name if meeting.company else "",
+                "meeting_date": meeting.meeting_date.isoformat() if meeting.meeting_date else "",
+                "candidate": candidate,
+            })
+    return rows
+
+
+@app.post("/api/schedule-candidates/{meeting_id}/{index}/save", dependencies=[Depends(_require_auth)])
+def save_schedule_candidate(meeting_id: int, index: int, payload: dict, db: Session = Depends(get_db)):
+    meeting = (
+        db.query(MeetingRecord)
+        .options(joinedload(MeetingRecord.company), joinedload(MeetingRecord.analysis))
+        .filter(MeetingRecord.id == meeting_id)
+        .first()
+    )
+    if not meeting or not meeting.analysis:
+        raise HTTPException(status_code=404, detail="Meeting not found")
+    candidates = list(meeting.analysis.schedule_candidates or [])
+    if index < 0 or index >= len(candidates) or not isinstance(candidates[index], dict):
+        raise HTTPException(status_code=404, detail="Schedule candidate not found")
+    candidate = {**candidates[index], **payload}
+    if not _schedule_candidate_exists(db, meeting, candidate):
+        _add_schedule_candidate(db, meeting, candidate)
+    _update_schedule_candidate_state(meeting, index, **candidate, saved=True, ignored=False)
+    db.commit()
+    return {"ok": True}
+
+
+@app.post("/api/schedule-candidates/{meeting_id}/{index}/ignore", dependencies=[Depends(_require_auth)])
+def ignore_schedule_candidate(meeting_id: int, index: int, db: Session = Depends(get_db)):
+    meeting = (
+        db.query(MeetingRecord)
+        .options(joinedload(MeetingRecord.analysis))
+        .filter(MeetingRecord.id == meeting_id)
+        .first()
+    )
+    if not meeting or not meeting.analysis:
+        raise HTTPException(status_code=404, detail="Meeting not found")
+    _update_schedule_candidate_state(meeting, index, ignored=True)
     db.commit()
     return {"ok": True}
 

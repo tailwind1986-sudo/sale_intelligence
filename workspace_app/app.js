@@ -14,6 +14,7 @@ const state = {
   selectedCompany: null,
   actions: [],
   promises: [],
+  candidates: [],
   view: "dashboard",
 };
 
@@ -456,6 +457,57 @@ function showInfoForm(row = null) {
   };
 }
 
+async function loadCandidates() {
+  const stateFilter = $("candidateState").value || "pending";
+  state.candidates = await api(`/api/schedule-candidates?state=${encodeURIComponent(stateFilter)}`) || [];
+  renderCandidates();
+}
+
+function renderCandidates() {
+  if (!state.candidates.length) {
+    $("candidateList").innerHTML = `<p class="empty">검토할 일정 후보가 없습니다.</p>`;
+    return;
+  }
+  $("candidateList").innerHTML = state.candidates.map((row, idx) => {
+    const c = row.candidate || {};
+    return `
+      <form class="candidate-card" data-candidate-form="${idx}">
+        <div class="candidate-head">
+          <div>
+            <strong>${escapeHtml(c.title || "일정 후보")}</strong>
+            <span>${escapeHtml([row.company, row.meeting_date, row.state].filter(Boolean).join(" · "))}</span>
+          </div>
+        </div>
+        <input name="title" placeholder="일정 제목" value="${escapeHtml(c.title || "")}" />
+        <div class="two-cols">
+          <input name="date" type="date" value="${escapeHtml(c.date || "")}" />
+          <input name="end_date" type="date" value="${escapeHtml(c.end_date || c.date || "")}" />
+        </div>
+        <input name="project" placeholder="관련 프로젝트" value="${escapeHtml(c.project || "")}" />
+        <input name="assignee" placeholder="담당자" value="${escapeHtml(c.assignee || "")}" />
+        <input name="location" placeholder="장소" value="${escapeHtml(c.location || "")}" />
+        <textarea name="note" placeholder="비고/근거">${escapeHtml(c.note || "")}</textarea>
+        <div class="form-actions">
+          <button class="small-primary" type="submit">일정표에 저장</button>
+          <button type="button" data-candidate-ignore="${idx}">무시</button>
+        </div>
+      </form>
+    `;
+  }).join("");
+}
+
+function candidatePayloadFromForm(form) {
+  return {
+    title: form.title.value.trim(),
+    date: form.date.value || null,
+    end_date: form.end_date.value || form.date.value || null,
+    project: form.project.value.trim() || null,
+    assignee: form.assignee.value.trim() || null,
+    location: form.location.value.trim() || null,
+    note: form.note.value.trim() || null,
+  };
+}
+
 async function refreshCompanyOptions() {
   state.companies = await api("/api/companies") || [];
   renderActionFilters();
@@ -466,6 +518,7 @@ function setView(view) {
   $("viewDashboard").classList.toggle("hidden", view !== "dashboard");
   $("viewActions").classList.toggle("hidden", view !== "actions");
   $("viewCompanies").classList.toggle("hidden", view !== "companies");
+  $("viewCandidates").classList.toggle("hidden", view !== "candidates");
   for (const btn of document.querySelectorAll(".tabs button")) {
     btn.classList.toggle("active", btn.dataset.view === view);
   }
@@ -474,6 +527,7 @@ function setView(view) {
     loadPromises();
   }
   if (view === "companies") loadCompanies();
+  if (view === "candidates") loadCandidates();
 }
 
 function bindEvents() {
@@ -498,6 +552,7 @@ function bindEvents() {
   $("companyTypeFilter").onchange = loadCompanies;
   $("companyStageFilter").onchange = loadCompanies;
   $("companyRiskFilter").onchange = loadCompanies;
+  $("candidateState").onchange = loadCandidates;
   document.addEventListener("click", async event => {
     const target = event.target;
     if (target.matches("[data-cancel-form]")) target.closest("form").classList.add("hidden");
@@ -548,6 +603,26 @@ function bindEvents() {
       await api(`/api/workspace/customer-infos/${infoDelete}`, { method: "DELETE" });
       await openCompany(state.selectedCompany.id);
     }
+    const candidateIgnore = target.dataset.candidateIgnore;
+    if (candidateIgnore) {
+      const row = state.candidates[Number(candidateIgnore)];
+      await api(`/api/schedule-candidates/${row.meeting_id}/${row.index}/ignore`, { method: "POST" });
+      await loadCandidates();
+    }
+  });
+  document.addEventListener("submit", async event => {
+    const formIndex = event.target.dataset.candidateForm;
+    if (formIndex === undefined) return;
+    event.preventDefault();
+    const row = state.candidates[Number(formIndex)];
+    const payload = candidatePayloadFromForm(event.target);
+    if (!payload.title || !payload.date) return;
+    await api(`/api/schedule-candidates/${row.meeting_id}/${row.index}/save`, {
+      method: "POST",
+      body: JSON.stringify(payload),
+    });
+    await loadCandidates();
+    await loadDashboard();
   });
   document.addEventListener("change", async event => {
     const actionId = event.target.dataset.actionStatus;
