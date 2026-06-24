@@ -431,6 +431,77 @@ def fmt_date(d) -> str:
     return d.strftime("%Y-%m-%d")
 
 
+def _as_list(value) -> list[str]:
+    if not value:
+        return []
+    if isinstance(value, list):
+        return [str(item).strip() for item in value if str(item).strip()]
+    return [str(value).strip()]
+
+
+def _shorten(value: str, limit: int = 80) -> str:
+    text = " ".join(str(value or "").split())
+    return text if len(text) <= limit else text[: limit - 1] + "…"
+
+
+def compact_meeting_report(meeting: MeetingRecord) -> str:
+    analysis = meeting.analysis
+    company = meeting.company.name if meeting.company else "-"
+    if not analysis:
+        return f"[미팅보고] {company}\n- 일자: {fmt_date(meeting.meeting_date)}\n- 분석 결과가 아직 없습니다."
+
+    key_points = _as_list(analysis.key_discussions)[:3]
+    needs = _as_list(analysis.customer_needs)[:2]
+    follow_ups = _as_list(analysis.follow_ups)[:3]
+    risks = _as_list(analysis.risk_factors)[:2]
+    opportunities = _as_list(analysis.sales_opportunities)[:2]
+
+    lines = [
+        f"[미팅보고] {company} / {fmt_date(meeting.meeting_date)}",
+        f"1. 요약: {_shorten(analysis.one_line_summary or analysis.detailed_summary or '-', 110)}",
+    ]
+    if key_points:
+        lines.append("2. 주요 논의: " + " / ".join(_shorten(x, 45) for x in key_points))
+    if needs:
+        lines.append("3. 고객 니즈: " + " / ".join(_shorten(x, 45) for x in needs))
+    if follow_ups:
+        lines.append("4. 후속조치: " + " / ".join(_shorten(x, 45) for x in follow_ups))
+    if risks:
+        lines.append("5. 리스크: " + " / ".join(_shorten(x, 45) for x in risks))
+    if opportunities:
+        lines.append("6. 기회: " + " / ".join(_shorten(x, 45) for x in opportunities))
+    lines.append(f"신뢰도 {analysis.trust_score}/100 · 위험도 {analysis.risk_score}/100")
+    return "\n".join(lines)
+
+
+def company_progress_summary(company: Company) -> str:
+    meetings = sorted(
+        [m for m in company.meetings if m.meeting_date],
+        key=lambda m: m.meeting_date,
+        reverse=True,
+    )
+    latest = meetings[0] if meetings else None
+    analysis = latest.analysis if latest else None
+    open_actions = [a for a in company.action_items if a.status not in ["완료", "?꾨즺"]]
+    open_promises = [p for p in company.promises if p.status not in ["완료", "?꾨즺"]]
+
+    status = analysis.one_line_summary if analysis and analysis.one_line_summary else (company.memo or "최근 미팅 요약 없음")
+    next_items = []
+    if analysis:
+        next_items.extend(_as_list(analysis.follow_ups)[:2])
+        next_items.extend(_as_list(analysis.pending_items)[:1])
+    if not next_items:
+        next_items = [a.content for a in open_actions[:2]]
+
+    return " / ".join([
+        f"최근 {fmt_date(latest.meeting_date) if latest else '-'}",
+        _shorten(status, 70),
+        f"진행 액션 {len(open_actions)}건",
+        f"미완료 약속 {len(open_promises)}건",
+        "다음: " + (_shorten(next_items[0], 55) if next_items else "-"),
+    ])
+
+
 SALES_STAGES = ["잠재", "접촉", "제안", "협상", "계약", "완료", "보류"]
 BUSINESS_TYPES = ["CSO", "TLD", "기타"]
 MEETING_TYPES = ["방문", "전화", "온라인", "기타"]
@@ -532,6 +603,32 @@ def page_dashboard():
                     )
             else:
                 st.success("7일 이내 마감 예정 액션아이템이 없습니다.")
+
+        st.markdown('<div class="section-title">업체별 진행현황 요약</div>', unsafe_allow_html=True)
+        companies_progress = (
+            db.query(Company)
+            .options(
+                joinedload(Company.meetings).joinedload(MeetingRecord.analysis),
+                joinedload(Company.action_items),
+                joinedload(Company.promises),
+            )
+            .order_by(Company.name)
+            .all()
+        )
+        progress_rows = [
+            {
+                "업체": c.name,
+                "영업단계": c.sales_stage or "-",
+                "리스크": c.risk_level or "-",
+                "진행현황": company_progress_summary(c),
+            }
+            for c in companies_progress
+            if c.meetings or c.action_items or c.promises
+        ]
+        if progress_rows:
+            st.dataframe(pd.DataFrame(progress_rows), hide_index=True, use_container_width=True)
+        else:
+            st.info("회의록이나 진행 항목이 쌓이면 업체별 진행현황이 표시됩니다.")
 
         return
         stage_data = (
@@ -1115,6 +1212,14 @@ def page_meeting_results():
         st.info(f"**한 줄 요약:** {a.one_line_summary or '-'}")
         if a.detailed_summary:
             st.write(a.detailed_summary)
+
+        st.markdown("**카톡 보고용 요약**")
+        st.text_area(
+            "복사해서 카톡/문자 보고에 붙여넣기",
+            value=compact_meeting_report(sel_meeting),
+            height=190,
+            key=f"kakao_report_{sel_meeting.id}",
+        )
 
         tab1, tab2, tab3, tab4, tab5 = st.tabs(["📌 핵심내용", "🤝 약속·액션", "⚠️ 리스크·불만", "💡 기회·질문", "📄 원문"])
 
