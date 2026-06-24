@@ -1536,9 +1536,9 @@ def _render_enhanced_meeting_result(db, sel_meeting: MeetingRecord) -> None:
                     if _schedule_candidate_exists(db, sel_meeting, item):
                         st.success("이미 캘린더에 등록된 일정입니다.")
                     elif _parse_ai_date(item.get("date")):
-                        if st.button("캘린더에 추가", key=f"add_schedule_candidate_{sel_meeting.id}_{idx}"):
+                        if st.button("일정표에 저장", key=f"add_schedule_candidate_{sel_meeting.id}_{idx}", type="primary"):
                             _add_schedule_candidate(db, sel_meeting, item)
-                            st.toast("캘린더에 추가했습니다.", icon="✅")
+                            st.toast("일정표에 저장했습니다. 알림 대상에 포함됩니다.", icon="✅")
                             st.rerun()
                     else:
                         st.warning("날짜가 명확하지 않아 자동 등록할 수 없습니다. 내용을 확인한 뒤 수동 등록해주세요.")
@@ -1983,10 +1983,18 @@ def page_action_items():
                             ai.due_date = new_due
                             db.commit()
                     with cols[3]:
-                        if st.button("🗑️", key=f"ai_del_{ai.id}"):
-                            db.delete(ai)
-                            db.commit()
-                            st.rerun()
+                        confirm_key = f"confirm_ai_del_{ai.id}"
+                        if st.button("삭제", key=f"ai_del_{ai.id}"):
+                            st.session_state[confirm_key] = True
+                        if st.session_state.get(confirm_key):
+                            if st.button("삭제 확인", key=f"ai_del_confirm_{ai.id}", type="primary"):
+                                db.delete(ai)
+                                db.commit()
+                                st.session_state.pop(confirm_key, None)
+                                st.rerun()
+                            if st.button("취소", key=f"ai_del_cancel_{ai.id}"):
+                                st.session_state.pop(confirm_key, None)
+                                st.rerun()
                     st.divider()
 
             # 수동 추가
@@ -2067,10 +2075,18 @@ def page_action_items():
                             db.commit()
                             st.rerun()
                     with cols[2]:
-                        if st.button("🗑️", key=f"p_del_{p.id}"):
-                            db.delete(p)
-                            db.commit()
-                            st.rerun()
+                        confirm_key = f"confirm_p_del_{p.id}"
+                        if st.button("삭제", key=f"p_del_{p.id}"):
+                            st.session_state[confirm_key] = True
+                        if st.session_state.get(confirm_key):
+                            if st.button("삭제 확인", key=f"p_del_confirm_{p.id}", type="primary"):
+                                db.delete(p)
+                                db.commit()
+                                st.session_state.pop(confirm_key, None)
+                                st.rerun()
+                            if st.button("취소", key=f"p_del_cancel_{p.id}"):
+                                st.session_state.pop(confirm_key, None)
+                                st.rerun()
                     st.divider()
 
             # 수동 약속 추가
