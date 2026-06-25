@@ -81,6 +81,47 @@ def send_message(text: str, chat_id: str | None = None) -> bool:
         return False
 
 
+def _schedule_time_text(schedule) -> str:
+    if schedule.all_day:
+        if schedule.start_dt.date() == schedule.end_dt.date():
+            return schedule.start_dt.strftime("%Y-%m-%d 종일")
+        return f"{schedule.start_dt.strftime('%Y-%m-%d')} ~ {schedule.end_dt.strftime('%Y-%m-%d')} 종일"
+    if schedule.start_dt.date() == schedule.end_dt.date():
+        return f"{schedule.start_dt.strftime('%Y-%m-%d %H:%M')} ~ {schedule.end_dt.strftime('%H:%M')}"
+    return f"{schedule.start_dt.strftime('%Y-%m-%d %H:%M')} ~ {schedule.end_dt.strftime('%Y-%m-%d %H:%M')}"
+
+
+def _reminder_label(minutes: int | None) -> str:
+    labels = {
+        0: "시작 시간",
+        10: "10분 전",
+        30: "30분 전",
+        60: "1시간 전",
+        180: "3시간 전",
+        1440: "하루 전",
+        10080: "일주일 전",
+    }
+    value = 0 if minutes is None else int(minutes)
+    return labels.get(value, f"{value}분 전")
+
+
+def send_schedule_created(schedule, chat_id: str | None = None) -> bool:
+    """Notify Telegram when a new schedule is registered."""
+    company_str = f" [{escape(schedule.company.name)}]" if getattr(schedule, "company", None) else ""
+    lines = [
+        f"<b>[신규일정등록]</b>{company_str}",
+        f"시간: {escape(_schedule_time_text(schedule))}",
+        f"제목: {escape(schedule.title or '-')}",
+    ]
+    if getattr(schedule, "remind_enabled", False):
+        lines.append(f"사전 알림: {_reminder_label(schedule.remind_minutes)}")
+    else:
+        lines.append("사전 알림: 없음")
+    if schedule.description:
+        lines.append(f"메모: {escape(schedule.description)}")
+    return send_message("\n".join(lines), chat_id)
+
+
 def send_daily_digest(db) -> bool:
     """Send a morning briefing with today's schedule and near-term execution items."""
     from database.models import ActionItem, Promise, Schedule
@@ -311,15 +352,15 @@ def check_and_send_reminders(db) -> int:
         remind_minutes = s.remind_minutes if s.remind_minutes is not None else 0
         remind_at = s.start_dt - timedelta(minutes=remind_minutes)
         if now >= remind_at:
-            company_str = f" [{s.company.name}]" if s.company else ""
-            time_str = s.start_dt.strftime("%m/%d 종일") if s.all_day else s.start_dt.strftime("%m/%d %H:%M")
+            company_str = f" [{escape(s.company.name)}]" if s.company else ""
             text = (
-                f"<b>일정 알림</b>{company_str}\n"
-                f"시간: {time_str}\n"
-                f"제목: {s.title}"
+                f"<b>[\uC77C\uC815\uC54C\uB9BC]</b>{company_str}\n"
+                f"\uC2DC\uAC04: {escape(_schedule_time_text(s))}\n"
+                f"\uC81C\uBAA9: {escape(s.title or '-')}\n"
+                f"\uC54C\uB9BC \uC124\uC815: {_reminder_label(s.remind_minutes)}"
             )
             if s.description:
-                text += f"\n메모: {s.description}"
+                text += f"\n\uBA54\uBAA8: {escape(s.description)}"
             if send_message(text, chat_id):
                 s.remind_sent = True
                 sent += 1

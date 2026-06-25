@@ -1426,10 +1426,18 @@ def save_schedule_candidate(meeting_id: int, index: int, payload: dict, db: Sess
     if index < 0 or index >= len(candidates) or not isinstance(candidates[index], dict):
         raise HTTPException(status_code=404, detail="Schedule candidate not found")
     candidate = {**candidates[index], **payload}
+    created = None
     if not _schedule_candidate_exists(db, meeting, candidate):
-        _add_schedule_candidate(db, meeting, candidate)
+        created = _add_schedule_candidate(db, meeting, candidate)
     _update_schedule_candidate_state(meeting, index, **candidate, saved=True, ignored=False)
     db.commit()
+    if created:
+        db.refresh(created)
+        try:
+            from services.telegram_service import send_schedule_created
+            send_schedule_created(created)
+        except Exception as exc:
+            print(f"Telegram schedule-created notification failed: {type(exc).__name__}")
     return {"ok": True}
 
 
@@ -1708,6 +1716,11 @@ def create_schedule(payload: SchedulePayload, db: Session = Depends(get_db)):
     db.add(row)
     db.commit()
     db.refresh(row)
+    try:
+        from services.telegram_service import send_schedule_created
+        send_schedule_created(row)
+    except Exception as exc:
+        print(f"Telegram schedule-created notification failed: {type(exc).__name__}")
     return _schedule_to_dict(row)
 
 

@@ -7,7 +7,7 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="default" />
   <meta name="theme-color" content="#ffffff" />
   <link rel="manifest" href="/mobile/static/manifest.webmanifest" />
-  <link rel="stylesheet" href="/mobile/static/styles.css?v=20260625-actioncal1" />
+  <link rel="stylesheet" href="/mobile/static/styles.css?v=20260625-reminder1" />
   <title>Sales Calendar</title>
 </head>
 <body>
@@ -40,7 +40,7 @@
       <div class="summary" id="monthSummary"></div>
 
       <div class="weekday-row">
-        <span>월</span><span>화</span><span>수</span><span>목</span><span>금</span><span>토</span><span>일</span>
+        <span class="sunday">&#51068;</span><span>&#50900;</span><span>&#54868;</span><span>&#49688;</span><span>&#47785;</span><span>&#44552;</span><span class="saturday">&#53664;</span>
       </div>
       <div id="monthGrid" class="month-grid"></div>
 
@@ -94,11 +94,13 @@
         <input id="startDate" type="date" />
         <input id="startTime" type="time" value="09:00" />
       </div>
+      <div id="startDateHint" class="date-hint"></div>
       <div class="form-row">
         <span>종료</span>
         <input id="endDate" type="date" />
         <input id="endTime" type="time" value="10:00" />
       </div>
+      <div id="endDateHint" class="date-hint"></div>
       <div class="form-row static-row">
         <span>시간대</span>
         <strong>한국 표준시 (GMT+09:00)</strong>
@@ -126,6 +128,6 @@
       <p id="editorError" class="error"></p>
     </section>
   </main>
-  <script src="/mobile/static/app.js?v=20260625-actioncal1"></script>
+  <script src="/mobile/static/app.js?v=20260625-reminder1"></script>
 </body>
 </html>

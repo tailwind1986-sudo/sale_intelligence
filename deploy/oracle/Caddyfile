@@ -1,14 +1,26 @@
+http://:80 {
+    redir https://161.33.148.67.sslip.io/mobile/workspace permanent
+}
+
 http://:8501 {
-    redir https://161.33.148.67.sslip.io{uri} permanent
+    redir https://161.33.148.67.sslip.io/mobile/workspace permanent
 }
 
 161.33.148.67.sslip.io {
     encode gzip
+
+    redir / /mobile/workspace permanent
     redir /mobile /mobile/
     redir /mobile/static /mobile/
     redir /mobile/static/ /mobile/
+
     handle_path /mobile* {
         reverse_proxy 127.0.0.1:8600
     }
-    reverse_proxy 127.0.0.1:8502
+
+    handle_path /streamlit* {
+        reverse_proxy 127.0.0.1:8502
+    }
+
+    reverse_proxy 127.0.0.1:8600
 }

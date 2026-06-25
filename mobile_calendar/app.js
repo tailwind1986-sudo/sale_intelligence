@@ -1,11 +1,11 @@
 const REMIND_OPTIONS = [
-  ["0", "시작 시간"],
-  ["10", "10분 전"],
-  ["30", "30분 전"],
-  ["60", "1시간 전"],
-  ["180", "3시간 전"],
-  ["1440", "하루 전"],
-  ["10080", "일주일 전"],
+  ["0", "\uC2DC\uC791 \uC2DC\uAC04"],
+  ["10", "10\uBD84 \uC804"],
+  ["30", "30\uBD84 \uC804"],
+  ["60", "1\uC2DC\uAC04 \uC804"],
+  ["180", "3\uC2DC\uAC04 \uC804"],
+  ["1440", "\uD558\uB8E8 \uC804"],
+  ["10080", "\uC77C\uC8FC\uC77C \uC804"],
 ];
 
 const state = {
@@ -55,8 +55,8 @@ function addDays(value, days) {
 
 function formatKoreanDate(value, withWeekday = false) {
   const d = parseLocalDate(value);
-  const weekday = "일월화수목금토"[d.getDay()];
-  return withWeekday ? `${d.getMonth() + 1}월 ${d.getDate()}일 ${weekday}요일` : `${d.getMonth() + 1}월 ${d.getDate()}일`;
+  const weekday = "\uC77C\uC6D4\uD654\uC218\uBAA9\uAE08\uD1A0"[d.getDay()];
+  return withWeekday ? `${d.getMonth() + 1}\uC6D4 ${d.getDate()}\uC77C ${weekday}\uC694\uC77C` : `${d.getMonth() + 1}\uC6D4 ${d.getDate()}\uC77C`;
 }
 
 function toAmpm(value) {
@@ -183,8 +183,8 @@ async function loadMonth() {
 }
 
 function renderMonth() {
-  $("monthJump").textContent = `${state.year}년 ${state.month}월`;
-  $("monthSummary").textContent = `일정 ${state.schedules.length}건 · 미팅기록 ${state.meetings.length}건`;
+  $("monthJump").textContent = `${state.year}\uB144 ${state.month}\uC6D4`;
+  $("monthSummary").textContent = `\uC77C\uC815 ${state.schedules.length}\uAC74 \u00B7 \uBBF8\uD305\uAE30\uB85D ${state.meetings.length}\uAC74`;
   const grid = $("monthGrid");
   grid.innerHTML = "";
 
@@ -195,7 +195,7 @@ function monthWeeks() {
   const weeks = [];
   const first = new Date(state.year, state.month - 1, 1);
   const lastDay = new Date(state.year, state.month, 0).getDate();
-  let week = Array((first.getDay() + 6) % 7).fill(null);
+  let week = Array(first.getDay()).fill(null);
   for (let day = 1; day <= lastDay; day++) {
     week.push(isoDate(new Date(state.year, state.month - 1, day)));
     if (week.length === 7) {
@@ -223,6 +223,8 @@ function renderWeek(week) {
     const d = parseLocalDate(iso);
     const cell = document.createElement("button");
     cell.className = "day-cell";
+    if (d.getDay() === 0) cell.classList.add("sunday");
+    if (d.getDay() === 6) cell.classList.add("saturday");
     if (iso === state.selectedDate) cell.classList.add("selected");
     if (iso === isoDate(new Date())) cell.classList.add("today");
     cell.innerHTML = `<div class="day-num">${d.getDate()}</div>`;
@@ -551,6 +553,7 @@ function openEditor(schedule = null, draftMode = false) {
     syncEndDateToStart(true);
     syncEndTimeToStart(true);
   }
+  updateDateHints();
   toggleTimeFields();
   show("editor");
 }
@@ -566,6 +569,7 @@ function syncEndDateToStart(force = false) {
   if (force || !state.endDateTouched || !$("endDate").value || $("endDate").value < start) {
     $("endDate").value = start;
   }
+  updateDateHints();
 }
 
 function syncEndTimeToStart(force = false) {
@@ -575,6 +579,12 @@ function syncEndTimeToStart(force = false) {
   $("endTime").value = next.time;
   if (next.nextDay && !state.endDateTouched) $("endDate").value = addDays($("startDate").value, 1);
   if (!next.nextDay && !state.endDateTouched) $("endDate").value = $("startDate").value;
+  updateDateHints();
+}
+
+function updateDateHints() {
+  if ($("startDateHint")) $("startDateHint").textContent = $("startDate").value ? formatKoreanDate($("startDate").value, true) : "";
+  if ($("endDateHint")) $("endDateHint").textContent = $("endDate").value ? formatKoreanDate($("endDate").value, true) : "";
 }
 
 function parseQuickSchedule(text) {
@@ -704,7 +714,7 @@ $("addBtn").onclick = () => openEditor();
 $("quickAddForm").addEventListener("submit", quickAddSchedule);
 $("allDay").onchange = () => { toggleTimeFields(); syncEndTimeToStart(true); };
 $("startDate").onchange = () => { syncEndDateToStart(true); syncEndTimeToStart(true); };
-$("endDate").onchange = () => { state.endDateTouched = true; };
+$("endDate").onchange = () => { state.endDateTouched = true; updateDateHints(); };
 $("startTime").onchange = () => syncEndTimeToStart(true);
 $("endTime").onchange = () => { state.endTimeTouched = true; };
 $("saveSchedule").onclick = saveSchedule;
