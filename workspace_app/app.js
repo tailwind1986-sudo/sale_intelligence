@@ -260,7 +260,7 @@ function renderActions() {
       </div>
       <div class="task-actions">
         <select data-action-status="${row.id}">${statusOptions(ACTION_STATUSES.filter(s => s !== "전체"), row.status || "예정")}</select>
-        <button data-action-calendar="${row.id}" class="accept-btn">수락</button>
+        <button data-action-calendar="${row.id}" class="accept-btn">캘린더 입력</button>
         <button data-action-edit="${row.id}">수정</button>
         <button class="danger-btn" data-action-delete="${row.id}">삭제</button>
       </div>

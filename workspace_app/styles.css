@@ -1015,11 +1015,11 @@ textarea { min-height: 72px; resize: vertical; }
 }
 
 .task-actions {
-  grid-template-columns: 124px 56px 56px 56px;
+  grid-template-columns: 124px 88px 56px 56px;
 }
 
 @media (max-width: 768px) {
   .task-actions {
-    grid-template-columns: minmax(0, 1fr) repeat(3, 58px);
+    grid-template-columns: minmax(0, 1fr) 92px repeat(2, 58px);
   }
 }
