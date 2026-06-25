@@ -123,8 +123,43 @@ async function bootstrap() {
   state.companies = await api("/api/companies");
   renderCompanyFilters();
   renderReminderOptions();
+  const draft = consumeScheduleDraft();
+  if (draft?.start_date) {
+    state.selectedDate = draft.start_date;
+    state.year = parseLocalDate(draft.start_date).getFullYear();
+    state.month = parseLocalDate(draft.start_date).getMonth() + 1;
+  }
   await loadMonth();
+  if (draft) {
+    openEditor(draft, true);
+    return;
+  }
   show("calendar");
+}
+
+function consumeScheduleDraft() {
+  const raw = localStorage.getItem("sales_schedule_draft");
+  if (!raw) return null;
+  localStorage.removeItem("sales_schedule_draft");
+  try {
+    const draft = JSON.parse(raw);
+    const startDate = draft.start_date || state.selectedDate;
+    return {
+      title: draft.title || "",
+      description: draft.description || "",
+      start_date: startDate,
+      end_date: draft.end_date || startDate,
+      start_time: draft.start_time || "09:00",
+      end_time: draft.end_time || "10:00",
+      all_day: draft.all_day !== false,
+      color: draft.color || "#3B82F6",
+      company_id: draft.company_id || "",
+      remind_enabled: draft.remind_enabled !== false,
+      remind_minutes: draft.remind_minutes || 1440,
+    };
+  } catch {
+    return null;
+  }
 }
 
 function renderCompanyFilters() {
@@ -496,8 +531,8 @@ function openScheduleDetail(s) {
   show("detail");
 }
 
-function openEditor(schedule = null) {
-  state.editing = schedule;
+function openEditor(schedule = null, draftMode = false) {
+  state.editing = draftMode ? null : schedule;
   state.endDateTouched = Boolean(schedule);
   state.endTimeTouched = Boolean(schedule);
   $("scheduleTitle").value = schedule?.title || "";
@@ -511,7 +546,7 @@ function openEditor(schedule = null) {
   $("scheduleColor").value = schedule?.color || "#3B82F6";
   $("remindEnabled").checked = schedule ? Boolean(schedule.remind_enabled) : true;
   $("remindMinutes").value = String(schedule?.remind_minutes || 1440);
-  $("deleteSchedule").classList.toggle("hidden", !schedule);
+  $("deleteSchedule").classList.toggle("hidden", !schedule || draftMode);
   if (!schedule) {
     syncEndDateToStart(true);
     syncEndTimeToStart(true);

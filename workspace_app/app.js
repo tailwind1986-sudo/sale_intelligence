@@ -260,11 +260,48 @@ function renderActions() {
       </div>
       <div class="task-actions">
         <select data-action-status="${row.id}">${statusOptions(ACTION_STATUSES.filter(s => s !== "전체"), row.status || "예정")}</select>
+        <button data-action-calendar="${row.id}" class="accept-btn">수락</button>
         <button data-action-edit="${row.id}">수정</button>
         <button class="danger-btn" data-action-delete="${row.id}">삭제</button>
       </div>
     </div>
   `).join("");
+}
+
+function actionScheduleDraft(row) {
+  const scheduleDate = row.due_date || todayIso();
+  const description = [
+    row.company_name ? `고객사: ${row.company_name}` : "",
+    row.assignee ? `담당자: ${row.assignee}` : "",
+    row.status ? `액션 상태: ${row.status}` : "",
+    row.notes ? `메모: ${row.notes}` : "",
+  ].filter(Boolean).join("\n");
+  return {
+    source: "action_item",
+    source_id: row.id,
+    title: row.content || "액션아이템",
+    description,
+    start_date: scheduleDate,
+    end_date: scheduleDate,
+    start_time: "09:00",
+    end_time: "10:00",
+    all_day: true,
+    color: "#2563EB",
+    company_id: row.company_id || null,
+    remind_enabled: true,
+    remind_minutes: 1440,
+  };
+}
+
+function openCalendarDraft(draft) {
+  localStorage.setItem("sales_schedule_draft", JSON.stringify(draft));
+  setView("calendar");
+  const frame = document.getElementById("calendarFrame");
+  if (frame) {
+    frame.dataset.loaded = "1";
+    const auth = token ? `auth=${encodeURIComponent(token)}&` : "";
+    frame.src = `/mobile/?${auth}draft=${Date.now()}`;
+  }
 }
 
 function renderPromises() {
@@ -981,6 +1018,11 @@ function bindEvents() {
     if (clearSlot) $(clearSlot).innerHTML = "";
     const actionEdit = target.dataset.actionEdit;
     if (actionEdit) showActionForm(state.actions.find(row => String(row.id) === actionEdit));
+    const actionCalendar = target.dataset.actionCalendar;
+    if (actionCalendar) {
+      const row = state.actions.find(item => String(item.id) === actionCalendar);
+      if (row) openCalendarDraft(actionScheduleDraft(row));
+    }
     const promiseEdit = target.dataset.promiseEdit;
     if (promiseEdit) showPromiseForm(state.promises.find(row => String(row.id) === promiseEdit));
     const actionDelete = target.dataset.actionDelete;
