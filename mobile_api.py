@@ -171,7 +171,13 @@ app.mount("/mobile/workspace/static", StaticFiles(directory=WORKSPACE_DIR), name
 async def mobile_api_alias(request, call_next):
     if request.scope.get("path", "").startswith("/mobile/api/"):
         request.scope["path"] = request.scope["path"].replace("/mobile/api/", "/api/", 1)
-    return await call_next(request)
+    response = await call_next(request)
+    path = request.scope.get("path", "")
+    if path.startswith(("/mobile", "/static", "/workspace")) or path in {"/", "/sw.js"}:
+        response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+        response.headers["Pragma"] = "no-cache"
+        response.headers["Expires"] = "0"
+    return response
 
 
 @app.on_event("startup")
