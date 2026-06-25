@@ -114,35 +114,76 @@ function todayIso() {
 
 function renderMetrics(metrics) {
   const items = [
-    ["오늘 일정", metrics.today_schedules],
-    ["7일 내 일정", metrics.week_schedules],
-    ["마감 액션", metrics.due_actions],
-    ["확인 약속", metrics.open_promises],
+    ["오늘", "일정", metrics.today_schedules],
+    ["7일", "예정", metrics.week_schedules],
+    ["마감", "액션", metrics.due_actions],
+    ["확인", "약속", metrics.open_promises],
   ];
-  $("metrics").innerHTML = items.map(([label, value]) => `
-    <div class="metric"><strong>${value}</strong><span>${label}</span></div>
+  $("metrics").innerHTML = items.map(([kicker, label, value]) => `
+    <div class="metric">
+      <span>${kicker}</span>
+      <strong>${value ?? 0}</strong>
+      <em>${label}</em>
+    </div>
   `).join("");
+}
+
+function emptyState(title, action = "") {
+  return `
+    <div class="empty-state">
+      <strong>${escapeHtml(title)}</strong>
+      ${action ? `<span>${escapeHtml(action)}</span>` : ""}
+    </div>
+  `;
+}
+
+function badge(text, tone = "neutral") {
+  return `<span class="badge ${tone}">${escapeHtml(text || "-")}</span>`;
+}
+
+function statusTone(status = "") {
+  if (status.includes("지연") || status.includes("불이행")) return "danger";
+  if (status.includes("완료")) return "done";
+  if (status.includes("진행")) return "active";
+  return "neutral";
+}
+
+function dashboardCard(row, type) {
+  const date = row.date || row.due_date || "";
+  const title = row.title || row.content || row.summary || "-";
+  const company = row.company || row.company_name || "";
+  const timeText = row.time || "";
+  const people = row.assignee || row.promised_by || "";
+  const status = row.status || "";
+  const meta = [company, timeText, people].filter(Boolean).join(" · ");
+  const tone = row.is_overdue ? "danger" : statusTone(status);
+  return `
+    <div class="dash-item ${type} ${row.is_overdue ? "overdue" : ""}">
+      <div class="dash-main">
+        <strong>${escapeHtml(title)}</strong>
+        <span>${escapeHtml(meta || date || "세부 정보 없음")}</span>
+      </div>
+      <div class="dash-side">
+        ${date ? `<time>${escapeHtml(date)}</time>` : ""}
+        ${status ? badge(status, tone) : ""}
+      </div>
+    </div>
+  `;
 }
 
 function renderList(id, rows, type) {
   if (!rows.length) {
-    $(id).innerHTML = `<p class="empty">표시할 항목이 없습니다.</p>`;
+    const emptyMessages = {
+      schedule: ["예정된 일정이 없습니다", "새 일정이 생기면 여기에 표시됩니다."],
+      action: ["마감 액션이 없습니다", "급한 후속 조치가 없어요."],
+      promise: ["확인할 약속이 없습니다", "미확인 약속이 생기면 알려드립니다."],
+      meeting: ["최근 미팅이 없습니다", "회의록을 업로드하면 요약이 쌓입니다."],
+    };
+    const [title, action] = emptyMessages[type] || ["표시할 항목이 없습니다", ""];
+    $(id).innerHTML = emptyState(title, action);
     return;
   }
-  $(id).innerHTML = rows.map(row => {
-    const date = row.date || row.due_date || "";
-    const title = row.title || row.content || row.summary || "-";
-    const metaParts = [row.company, row.company_name, row.time, row.assignee, row.promised_by, row.status].filter(Boolean);
-    return `
-      <div class="item ${type} ${row.is_overdue ? "overdue" : ""}">
-        <div class="date">${escapeHtml(date)}</div>
-        <div>
-          <div class="title">${escapeHtml(title)}</div>
-          <div class="meta">${escapeHtml(metaParts.join(" · "))}</div>
-        </div>
-      </div>
-    `;
-  }).join("");
+  $(id).innerHTML = rows.map(row => dashboardCard(row, type)).join("");
 }
 
 async function loadDashboard() {
@@ -202,36 +243,52 @@ async function loadPromises() {
 
 function renderActions() {
   if (!state.actions.length) {
-    $("actionList").innerHTML = `<p class="empty">액션아이템이 없습니다.</p>`;
+    $("actionList").innerHTML = emptyState("액션아이템이 없습니다", "새 액션을 추가하거나 미팅을 분석하면 자동으로 표시됩니다.");
     return;
   }
   $("actionList").innerHTML = state.actions.map(row => `
-    <div class="manage-row ${row.is_overdue ? "overdue" : ""}">
-      <div>
-        <div class="title">${escapeHtml(row.content)}</div>
-        <div class="meta">${escapeHtml([row.company_name, row.assignee || "담당자 없음", row.due_date || "기한 없음"].join(" · "))}</div>
+    <div class="task-card ${row.is_overdue ? "overdue" : ""}">
+      <div class="task-body">
+        <div class="task-topline">
+          ${badge(row.status || "예정", statusTone(row.status))}
+          ${row.is_overdue ? badge("기한 초과", "danger") : ""}
+          ${row.due_date ? `<time>${escapeHtml(row.due_date)}</time>` : `<time>기한 없음</time>`}
+        </div>
+        <strong>${escapeHtml(row.content)}</strong>
+        <span>${escapeHtml([row.company_name, row.assignee || "담당자 미정"].filter(Boolean).join(" · "))}</span>
+        ${row.notes ? `<p>${escapeHtml(row.notes)}</p>` : ""}
       </div>
-      <select data-action-status="${row.id}">${statusOptions(ACTION_STATUSES.filter(s => s !== "전체"), row.status || "예정")}</select>
-      <button data-action-edit="${row.id}">수정</button>
-      <button class="danger-btn" data-action-delete="${row.id}">삭제</button>
+      <div class="task-actions">
+        <select data-action-status="${row.id}">${statusOptions(ACTION_STATUSES.filter(s => s !== "전체"), row.status || "예정")}</select>
+        <button data-action-edit="${row.id}">수정</button>
+        <button class="danger-btn" data-action-delete="${row.id}">삭제</button>
+      </div>
     </div>
   `).join("");
 }
 
 function renderPromises() {
   if (!state.promises.length) {
-    $("promiseList").innerHTML = `<p class="empty">약속사항이 없습니다.</p>`;
+    $("promiseList").innerHTML = emptyState("약속사항이 없습니다", "고객에게 받은 약속이나 확인 필요 항목이 표시됩니다.");
     return;
   }
   $("promiseList").innerHTML = state.promises.map(row => `
-    <div class="manage-row ${row.is_overdue ? "overdue" : ""}">
-      <div>
-        <div class="title">${escapeHtml(row.content)}</div>
-        <div class="meta">${escapeHtml([row.company_name, row.promised_by || "약속자 없음", row.due_date || "기한 없음"].join(" · "))}</div>
+    <div class="task-card promise ${row.is_overdue ? "overdue" : ""}">
+      <div class="task-body">
+        <div class="task-topline">
+          ${badge(row.status || "미확인", statusTone(row.status))}
+          ${row.is_overdue ? badge("확인 지연", "danger") : ""}
+          ${row.due_date ? `<time>${escapeHtml(row.due_date)}</time>` : `<time>기한 없음</time>`}
+        </div>
+        <strong>${escapeHtml(row.content)}</strong>
+        <span>${escapeHtml([row.company_name, row.promised_by || "약속자 미정"].filter(Boolean).join(" · "))}</span>
+        ${row.notes ? `<p>${escapeHtml(row.notes)}</p>` : ""}
       </div>
-      <select data-promise-status="${row.id}">${statusOptions(PROMISE_STATUSES.filter(s => s !== "전체"), row.status || "미확인")}</select>
-      <button data-promise-edit="${row.id}">수정</button>
-      <button class="danger-btn" data-promise-delete="${row.id}">삭제</button>
+      <div class="task-actions">
+        <select data-promise-status="${row.id}">${statusOptions(PROMISE_STATUSES.filter(s => s !== "전체"), row.status || "미확인")}</select>
+        <button data-promise-edit="${row.id}">수정</button>
+        <button class="danger-btn" data-promise-delete="${row.id}">삭제</button>
+      </div>
     </div>
   `).join("");
 }

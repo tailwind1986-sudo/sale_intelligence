@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <meta name="theme-color" content="#ffffff" />
   <title>Sales Workspace</title>
-  <link rel="stylesheet" href="/mobile/workspace/static/styles.css?v=20260624-ws2" />
+  <link rel="stylesheet" href="/mobile/workspace/static/styles.css?v=20260625-dash1" />
 </head>
 <body>
   <section id="workspaceLogin" class="workspace-login hidden">
@@ -104,6 +104,10 @@
         <!-- 대시보드 -->
         <section id="viewDashboard" class="view">
           <section id="metrics" class="metrics"></section>
+          <section class="section-intro">
+            <strong>오늘 실행 보드</strong>
+            <span>일정, 마감 액션, 확인 약속을 우선순위대로 확인합니다.</span>
+          </section>
           <section class="grid">
             <article class="panel">
               <h2>오늘 일정</h2>
@@ -132,7 +136,10 @@
         <section id="viewActions" class="view hidden">
           <section class="panel">
             <div class="panel-head">
-              <h2>액션아이템</h2>
+              <div>
+                <h2>액션아이템</h2>
+                <p>해야 할 일, 담당자, 기한을 한 번에 관리합니다.</p>
+              </div>
               <button id="newActionBtn" class="small-primary">추가</button>
             </div>
             <div class="filters">
@@ -145,7 +152,10 @@
           </section>
           <section class="panel" style="margin-top:14px">
             <div class="panel-head">
-              <h2>약속사항</h2>
+              <div>
+                <h2>약속사항</h2>
+                <p>고객과 주고받은 약속, 확인 필요 항목을 추적합니다.</p>
+              </div>
               <button id="newPromiseBtn" class="small-primary">추가</button>
             </div>
             <div class="filters">
@@ -292,6 +302,6 @@
     </div>
   </div>
 
-  <script src="/mobile/workspace/static/app.js?v=20260624-ws2"></script>
+  <script src="/mobile/workspace/static/app.js?v=20260625-dash1"></script>
 </body>
 </html>
