@@ -9,7 +9,7 @@ import os
 import re
 import hashlib
 import hmac
-from calendar import monthcalendar, monthrange
+from calendar import Calendar, monthcalendar, monthrange
 from datetime import date, datetime, time, timedelta
 from pathlib import Path
 from zoneinfo import ZoneInfo
@@ -3104,6 +3104,32 @@ def _render_mobile_calendar_stack(db, companies_all):
   font-weight: 700;
   padding: 4px 0;
 }
+.mobile-cal-weekday.sunday {
+  color: #DC2626;
+}
+.mobile-cal-weekday.saturday {
+  color: #2563EB;
+}
+.mobile-cal-row div[data-testid="column"]:nth-child(1) div[data-testid="stButton"] > button {
+  background: #FFF7F7;
+  color: #B91C1C;
+  border-color: #FECACA;
+}
+.mobile-cal-row div[data-testid="column"]:nth-child(7) div[data-testid="stButton"] > button {
+  background: #F7FBFF;
+  color: #1D4ED8;
+  border-color: #BFDBFE;
+}
+div[data-testid="stHorizontalBlock"]:has(> div[data-testid="column"]:nth-child(7)) > div[data-testid="column"]:nth-child(1) div[data-testid="stButton"] > button {
+  background: #FFF7F7;
+  color: #B91C1C;
+  border-color: #FECACA;
+}
+div[data-testid="stHorizontalBlock"]:has(> div[data-testid="column"]:nth-child(7)) > div[data-testid="column"]:nth-child(7) div[data-testid="stButton"] > button {
+  background: #F7FBFF;
+  color: #1D4ED8;
+  border-color: #BFDBFE;
+}
 .mobile-cal-empty {
   min-height: 48px;
 }
@@ -3209,11 +3235,22 @@ def _render_mobile_calendar_stack(db, companies_all):
 
     st.markdown(
         "<div class='mobile-cal-grid'>"
-        + "".join(f"<div class='mobile-cal-weekday'>{label}</div>" for label in ["월", "화", "수", "목", "금", "토", "일"])
+        + "".join(
+            f"<div class='mobile-cal-weekday {klass}'>{label}</div>"
+            for label, klass in [
+                ("일", "sunday"),
+                ("월", ""),
+                ("화", ""),
+                ("수", ""),
+                ("목", ""),
+                ("금", ""),
+                ("토", "saturday"),
+            ]
+        )
         + "</div>",
         unsafe_allow_html=True,
     )
-    for week in monthcalendar(year, month):
+    for week in Calendar(firstweekday=6).monthdayscalendar(year, month):
         cols = st.columns(7)
         for idx, day_num in enumerate(week):
             if day_num == 0:

@@ -223,11 +223,11 @@ textarea {
 .day-cell.empty { background: #fbfcfd; }
 .day-cell.outside { color: #b8bdc7; }
 .day-cell.sunday {
-  background: #fff7f7;
+  background: #fff1f2;
   color: #dc2626;
 }
 .day-cell.saturday {
-  background: #f7fbff;
+  background: #eff6ff;
   color: #2563eb;
 }
 .day-cell.selected { background: #eef7ff; }
@@ -264,10 +264,10 @@ textarea {
 
 .month-week .week-bars {
   background:
-    linear-gradient(90deg,
-      rgba(220, 38, 38, 0.035) 0 calc(100% / 7),
+      linear-gradient(90deg,
+      rgba(220, 38, 38, 0.08) 0 calc(100% / 7),
       transparent calc(100% / 7) calc(600% / 7),
-      rgba(37, 99, 235, 0.035) calc(600% / 7) 100%);
+      rgba(37, 99, 235, 0.08) calc(600% / 7) 100%);
 }
 
 .week-event-bar {
