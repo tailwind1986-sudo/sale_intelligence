@@ -282,12 +282,30 @@
               <h2>텔레그램 설정</h2>
             </div>
             <div id="telegramStatus" class="notice"></div>
+
+            <div class="tg-group-label">기본</div>
             <div class="button-grid">
               <button data-telegram-action="test">테스트 메시지</button>
               <button data-telegram-action="check-reminders">지금 알림 체크</button>
-              <button data-telegram-action="daily-digest">오늘 브리핑 발송</button>
-              <button data-telegram-action="weekly-summary">주간 요약 발송</button>
             </div>
+
+            <div class="tg-group-label" style="margin-top:12px">브리핑</div>
+            <div class="button-grid">
+              <button data-telegram-action="daily-digest">☀️ 아침 브리핑 (일정·할일)</button>
+              <button data-telegram-action="afternoon-briefing">🌆 오후 브리핑 (회의록 정리)</button>
+            </div>
+            <div class="tg-date-row" style="margin-top:8px">
+              <input type="date" id="tgDateInput" />
+              <button id="tgDateBriefingBtn">📅 날짜 지정 브리핑</button>
+            </div>
+
+            <div class="tg-group-label" style="margin-top:12px">주간 요약</div>
+            <div class="button-grid">
+              <button data-weekly-offset="0">📊 금주 요약 발송</button>
+              <button data-weekly-offset="-1">📊 지난주 요약 발송</button>
+              <button data-weekly-offset="-2">📊 2주전 요약 발송</button>
+            </div>
+
             <p id="telegramResult" class="meta"></p>
           </section>
         </section>

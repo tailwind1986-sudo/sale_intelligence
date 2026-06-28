@@ -1148,9 +1148,23 @@ def telegram_daily_digest(db: Session = Depends(get_db)):
 
 
 @app.post("/api/telegram/weekly-summary", dependencies=[Depends(_require_auth)])
-def telegram_weekly_summary(db: Session = Depends(get_db)):
-    from services.telegram_service import send_weekly_summary
-    ok = send_weekly_summary(db)
+def telegram_weekly_summary(week_offset: int = 0, db: Session = Depends(get_db)):
+    from services.telegram_service import send_weekly_summary_for_week
+    ok = send_weekly_summary_for_week(db, week_offset=week_offset)
+    return {"ok": bool(ok)}
+
+
+@app.post("/api/telegram/afternoon-briefing", dependencies=[Depends(_require_auth)])
+def telegram_afternoon_briefing(db: Session = Depends(get_db)):
+    from services.telegram_service import send_afternoon_briefing
+    ok = send_afternoon_briefing(db)
+    return {"ok": bool(ok)}
+
+
+@app.post("/api/telegram/date-briefing", dependencies=[Depends(_require_auth)])
+def telegram_date_briefing(target_date: str, db: Session = Depends(get_db)):
+    from services.telegram_service import send_daily_digest_for_date
+    ok = send_daily_digest_for_date(db, target_date)
     return {"ok": bool(ok)}
 
 

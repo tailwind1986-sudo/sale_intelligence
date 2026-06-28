@@ -1158,6 +1158,29 @@ function bindEvents() {
     }
     const telegramAction = target.dataset.telegramAction;
     if (telegramAction) await runTelegramAction(telegramAction);
+
+    const weeklyOffset = target.dataset.weeklyOffset;
+    if (weeklyOffset !== undefined) {
+      $("telegramResult").textContent = "주간 요약 전송 중...";
+      try {
+        const result = await api(`/api/telegram/weekly-summary?week_offset=${weeklyOffset}`, { method: "POST" });
+        $("telegramResult").textContent = result.ok ? "주간 요약 전송 완료" : "전송할 미팅 기록이 없습니다.";
+      } catch (e) {
+        $("telegramResult").textContent = "전송 실패: " + e.message;
+      }
+    }
+
+    if (target.id === "tgDateBriefingBtn") {
+      const dateVal = $("tgDateInput").value;
+      if (!dateVal) { alert("날짜를 선택하세요."); return; }
+      $("telegramResult").textContent = "브리핑 전송 중...";
+      try {
+        const result = await api(`/api/telegram/date-briefing?target_date=${dateVal}`, { method: "POST" });
+        $("telegramResult").textContent = result.ok ? `${dateVal} 브리핑 전송 완료` : "전송할 내용이 없습니다.";
+      } catch (e) {
+        $("telegramResult").textContent = "전송 실패: " + e.message;
+      }
+    }
   });
   document.addEventListener("submit", async event => {
     const formIndex = event.target.dataset.candidateForm;

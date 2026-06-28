@@ -616,6 +616,48 @@ textarea { min-height: 72px; resize: vertical; }
 
 .button-grid button:hover { background: #eaeaea; }
 
+.tg-group-label {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-top: 14px;
+  margin-bottom: 4px;
+}
+
+.tg-date-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.tg-date-row input[type="date"] {
+  flex: 1;
+  height: 38px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 0 10px;
+  font-size: 13px;
+  background: #f4f4f4;
+  color: var(--text);
+}
+
+.tg-date-row button {
+  height: 38px;
+  padding: 0 14px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #f4f4f4;
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.tg-date-row button:hover { background: #eaeaea; }
+
 .candidate-card {
   display: grid;
   gap: 8px;

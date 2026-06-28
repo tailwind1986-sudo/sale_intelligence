@@ -327,6 +327,242 @@ def send_weekly_summary(db) -> bool:
     return send_message(header + summary, chat_id)
 
 
+def send_weekly_summary_for_week(db, week_offset: int = 0) -> bool:
+    """week_offset=0: 금주, -1: 지난주, -2: 2주전"""
+    from database.models import MeetingRecord
+    from sqlalchemy.orm import joinedload
+
+    token = _get_token()
+    chat_id = _get_chat_id()
+    openai_key = _get_secret("OPENAI_API_KEY")
+    if not token or not chat_id or not openai_key:
+        return False
+
+    now = _local_now_naive()
+    monday = now - timedelta(days=now.weekday()) + timedelta(weeks=week_offset)
+    week_start = monday.replace(hour=0, minute=0, second=0, microsecond=0)
+    week_end = (monday + timedelta(days=6)).replace(hour=23, minute=59, second=59, microsecond=0)
+
+    from sqlalchemy import or_
+    meetings = (
+        db.query(MeetingRecord)
+        .options(joinedload(MeetingRecord.company), joinedload(MeetingRecord.analysis))
+        .filter(
+            or_(
+                (MeetingRecord.meeting_date >= week_start.date()) &
+                (MeetingRecord.meeting_date <= week_end.date()),
+                (MeetingRecord.meeting_date == None) &
+                (MeetingRecord.created_at >= week_start) &
+                (MeetingRecord.created_at <= week_end),
+            )
+        )
+        .order_by(MeetingRecord.meeting_date, MeetingRecord.created_at)
+        .all()
+    )
+
+    if not meetings:
+        return False
+
+    meeting_texts = []
+    for m in meetings:
+        date_str = m.meeting_date.strftime("%m/%d") if m.meeting_date else "날짜미상"
+        company = m.company.name if m.company else "미상"
+        parts = [f"[{date_str}] {company}"]
+        a = m.analysis
+        if a:
+            if a.one_line_summary:
+                parts.append(f"요약: {a.one_line_summary}")
+            if a.detailed_summary:
+                parts.append(f"상세: {a.detailed_summary[:200]}")
+            for label, field in [("핵심논의", a.key_discussions), ("결정사항", getattr(a, "decisions", None)),
+                                  ("후속조치", a.follow_ups), ("리스크", a.risk_factors)]:
+                if isinstance(field, list) and field:
+                    parts.append(f"{label}: " + " / ".join(str(i) for i in field[:2]))
+        elif m.raw_text:
+            parts.append(m.raw_text[:300])
+        meeting_texts.append("\n".join(parts))
+
+    week_label = f"{week_start.month}/{week_start.day}~{week_end.month}/{week_end.day}"
+    prompt = f"""아래는 {week_label} 주간 영업 미팅 기록입니다.
+주간 영업 보고서용으로 아래 형식에 맞게 작성해 주세요.
+
+작성 규칙:
+- 모든 항목은 명사형으로 끝맺음
+- 텔레그램 HTML 태그 사용: 주제는 <b>, 소주제는 <i>
+- 핵심만 간결하게
+
+출력 형식:
+<b>📌 이번 주 핵심</b>
+  • [핵심 내용]
+
+<b>🏢 고객사별 현황</b>
+  <i>[고객사명]</i>
+    - 주요논의: [내용]
+    - 결정사항: [내용]
+    - 후속조치: [내용]
+
+<b>✅ 다음 주 액션</b>
+  • [담당자/내용/기한]
+
+미팅 기록:
+{chr(10).join(meeting_texts)}"""
+
+    try:
+        from openai import OpenAI
+        client = OpenAI(api_key=openai_key)
+        resp = client.chat.completions.create(
+            model="gpt-4.1",
+            messages=[{"role": "user", "content": prompt}],
+            max_tokens=1500,
+            temperature=0.3,
+        )
+        summary = resp.choices[0].message.content.strip()
+    except Exception as exc:
+        print(f"GPT weekly summary failed: {exc}")
+        return False
+
+    label_prefix = {0: "금주", -1: "지난주", -2: "2주전"}.get(week_offset, week_label)
+    header = f"📊 <b>주간 영업 보고 [{label_prefix} {week_label}]</b>\n미팅 {len(meetings)}건\n\n"
+    return send_message(header + summary, chat_id)
+
+
+def send_afternoon_briefing(db) -> bool:
+    """오후 브리핑: 오늘 입력된 회의록 정리 및 요약 전송"""
+    from database.models import MeetingRecord
+    from sqlalchemy.orm import joinedload
+
+    token = _get_token()
+    chat_id = _get_chat_id()
+    if not token or not chat_id:
+        return False
+
+    now = _local_now_naive()
+    day_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    day_end = now.replace(hour=23, minute=59, second=59, microsecond=0)
+
+    from sqlalchemy import or_
+    meetings = (
+        db.query(MeetingRecord)
+        .options(joinedload(MeetingRecord.company), joinedload(MeetingRecord.analysis))
+        .filter(
+            or_(
+                (MeetingRecord.meeting_date == now.date()),
+                (MeetingRecord.meeting_date == None) &
+                (MeetingRecord.created_at >= day_start) &
+                (MeetingRecord.created_at <= day_end),
+            )
+        )
+        .order_by(MeetingRecord.created_at)
+        .all()
+    )
+
+    lines = [f"🌆 <b>{now.month}월 {now.day}일 오후 브리핑</b>"]
+
+    if not meetings:
+        lines.append("\n오늘 입력된 회의록이 없습니다.")
+        return send_message("\n".join(lines), chat_id)
+
+    lines.append(f"\n<b>오늘 미팅 요약 ({len(meetings)}건)</b>")
+    for m in meetings:
+        company = escape(m.company.name if m.company else "미상")
+        a = m.analysis
+        lines.append(f"\n<i>🏢 {company}</i>")
+        if a and a.one_line_summary:
+            lines.append(f"• {escape(a.one_line_summary)}")
+        if a and getattr(a, "decisions", None):
+            decisions = a.decisions if isinstance(a.decisions, list) else []
+            for d in decisions[:2]:
+                lines.append(f"  ✅ {escape(str(d))}")
+        if a and getattr(a, "action_items_structured", None):
+            items = a.action_items_structured if isinstance(a.action_items_structured, list) else []
+            for item in items[:3]:
+                if isinstance(item, dict):
+                    task = item.get("task", "")
+                    assignee = item.get("assignee", "")
+                    due = item.get("due_date", "")
+                    lines.append(f"  → {escape(task)} / {escape(assignee)}" + (f" ({escape(due)})" if due else ""))
+        if a and getattr(a, "risks_and_checks", None):
+            risks = a.risks_and_checks if isinstance(a.risks_and_checks, list) else []
+            for r in risks[:1]:
+                lines.append(f"  ⚠️ {escape(str(r))}")
+
+    return send_message("\n".join(lines), chat_id)
+
+
+def send_daily_digest_for_date(db, target_date) -> bool:
+    """특정 날짜의 일정+액션+약속 브리핑 전송"""
+    from database.models import ActionItem, Promise, Schedule
+
+    token = _get_token()
+    chat_id = _get_chat_id()
+    if not token or not chat_id:
+        return False
+
+    from datetime import date as date_type
+    if isinstance(target_date, str):
+        target_date = date_type.fromisoformat(target_date)
+
+    now = _local_now_naive()
+    day_start = now.replace(year=target_date.year, month=target_date.month, day=target_date.day,
+                            hour=0, minute=0, second=0, microsecond=0)
+    day_end = day_start.replace(hour=23, minute=59, second=59)
+
+    schedules = (
+        db.query(Schedule)
+        .filter(Schedule.start_dt <= day_end, Schedule.end_dt >= day_start)
+        .order_by(Schedule.all_day.desc(), Schedule.start_dt)
+        .all()
+    )
+    actions = (
+        db.query(ActionItem)
+        .filter(
+            ActionItem.status.in_(["예정", "진행중", "지연"]),
+            ActionItem.due_date == target_date,
+        )
+        .order_by(ActionItem.due_date)
+        .all()
+    )
+    promises = (
+        db.query(Promise)
+        .filter(
+            Promise.status.in_(["미확인", "진행중", "지연"]),
+            Promise.due_date == target_date,
+        )
+        .all()
+    )
+
+    def _company_label(row) -> str:
+        return f" [{escape(row.company.name)}]" if getattr(row, "company", None) else ""
+
+    def _short(text, limit=70):
+        value = (text or "").strip()
+        return escape(value[:limit] + ("…" if len(value) > limit else ""))
+
+    date_str = target_date.strftime("%m월 %d일")
+    lines = [f"📅 <b>{date_str} 브리핑</b>"]
+
+    lines.append(f"\n<b>일정 ({len(schedules)}건)</b>")
+    for s in schedules:
+        time_str = "종일" if s.all_day else f"{s.start_dt.strftime('%H:%M')}~{s.end_dt.strftime('%H:%M')}"
+        lines.append(f"• {time_str}{_company_label(s)} {_short(s.title)}")
+    if not schedules:
+        lines.append("• 등록된 일정 없음")
+
+    lines.append(f"\n<b>마감 액션 ({len(actions)}건)</b>")
+    for a in actions:
+        lines.append(f"• {_company_label(a)} {_short(a.content)}")
+    if not actions:
+        lines.append("• 해당일 마감 액션 없음")
+
+    lines.append(f"\n<b>확인할 약속 ({len(promises)}건)</b>")
+    for p in promises:
+        lines.append(f"• {_company_label(p)} {_short(p.content)}")
+    if not promises:
+        lines.append("• 해당일 확인할 약속 없음")
+
+    return send_message("\n".join(lines), chat_id)
+
+
 def check_and_send_reminders(db) -> int:
     """Send due Telegram reminders and mark them as sent."""
     from database.models import Schedule
