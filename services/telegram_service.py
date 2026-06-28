@@ -490,8 +490,9 @@ def send_afternoon_briefing(db) -> bool:
 
 
 def send_daily_digest_for_date(db, target_date) -> bool:
-    """특정 날짜의 일정+액션+약속 브리핑 전송"""
-    from database.models import ActionItem, Promise, Schedule
+    """특정 날짜의 회의록 정리 브리핑 전송 (오후 브리핑 스타일)"""
+    from database.models import MeetingRecord
+    from sqlalchemy.orm import joinedload
 
     token = _get_token()
     chat_id = _get_chat_id()
@@ -507,58 +508,49 @@ def send_daily_digest_for_date(db, target_date) -> bool:
                             hour=0, minute=0, second=0, microsecond=0)
     day_end = day_start.replace(hour=23, minute=59, second=59)
 
-    schedules = (
-        db.query(Schedule)
-        .filter(Schedule.start_dt <= day_end, Schedule.end_dt >= day_start)
-        .order_by(Schedule.all_day.desc(), Schedule.start_dt)
-        .all()
-    )
-    actions = (
-        db.query(ActionItem)
+    from sqlalchemy import or_
+    meetings = (
+        db.query(MeetingRecord)
+        .options(joinedload(MeetingRecord.company), joinedload(MeetingRecord.analysis))
         .filter(
-            ActionItem.status.in_(["예정", "진행중", "지연"]),
-            ActionItem.due_date == target_date,
+            or_(
+                (MeetingRecord.meeting_date == target_date),
+                (MeetingRecord.meeting_date == None) &
+                (MeetingRecord.created_at >= day_start) &
+                (MeetingRecord.created_at <= day_end),
+            )
         )
-        .order_by(ActionItem.due_date)
+        .order_by(MeetingRecord.created_at)
         .all()
     )
-    promises = (
-        db.query(Promise)
-        .filter(
-            Promise.status.in_(["미확인", "진행중", "지연"]),
-            Promise.due_date == target_date,
-        )
-        .all()
-    )
-
-    def _company_label(row) -> str:
-        return f" [{escape(row.company.name)}]" if getattr(row, "company", None) else ""
-
-    def _short(text, limit=70):
-        value = (text or "").strip()
-        return escape(value[:limit] + ("…" if len(value) > limit else ""))
 
     date_str = target_date.strftime("%m월 %d일")
-    lines = [f"📅 <b>{date_str} 브리핑</b>"]
+    lines = [f"📅 <b>{date_str} 회의록 정리</b>"]
 
-    lines.append(f"\n<b>일정 ({len(schedules)}건)</b>")
-    for s in schedules:
-        time_str = "종일" if s.all_day else f"{s.start_dt.strftime('%H:%M')}~{s.end_dt.strftime('%H:%M')}"
-        lines.append(f"• {time_str}{_company_label(s)} {_short(s.title)}")
-    if not schedules:
-        lines.append("• 등록된 일정 없음")
+    if not meetings:
+        lines.append(f"\n해당 날짜에 입력된 회의록이 없습니다.")
+        return send_message("\n".join(lines), chat_id)
 
-    lines.append(f"\n<b>마감 액션 ({len(actions)}건)</b>")
-    for a in actions:
-        lines.append(f"• {_company_label(a)} {_short(a.content)}")
-    if not actions:
-        lines.append("• 해당일 마감 액션 없음")
-
-    lines.append(f"\n<b>확인할 약속 ({len(promises)}건)</b>")
-    for p in promises:
-        lines.append(f"• {_company_label(p)} {_short(p.content)}")
-    if not promises:
-        lines.append("• 해당일 확인할 약속 없음")
+    lines.append(f"\n<b>미팅 요약 ({len(meetings)}건)</b>")
+    for m in meetings:
+        company = escape(m.company.name if m.company else "미상")
+        a = m.analysis
+        lines.append(f"\n<i>🏢 {company}</i>")
+        if a and a.one_line_summary:
+            lines.append(f"• {escape(a.one_line_summary)}")
+        if a and getattr(a, "decisions", None):
+            for d in (a.decisions if isinstance(a.decisions, list) else [])[:2]:
+                lines.append(f"  ✅ {escape(str(d))}")
+        if a and getattr(a, "action_items_structured", None):
+            for item in (a.action_items_structured if isinstance(a.action_items_structured, list) else [])[:3]:
+                if isinstance(item, dict):
+                    task = item.get("task", "")
+                    assignee = item.get("assignee", "")
+                    due = item.get("due_date", "")
+                    lines.append(f"  → {escape(task)} / {escape(assignee)}" + (f" ({escape(due)})" if due else ""))
+        if a and getattr(a, "risks_and_checks", None):
+            for r in (a.risks_and_checks if isinstance(a.risks_and_checks, list) else [])[:1]:
+                lines.append(f"  ⚠️ {escape(str(r))}")
 
     return send_message("\n".join(lines), chat_id)
 
