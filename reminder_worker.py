@@ -2,7 +2,13 @@ from __future__ import annotations
 
 import sys
 from database.db import SessionLocal, create_database
-from services.telegram_service import check_and_send_reminders, send_daily_digest, send_weekly_summary
+from services.telegram_service import (
+    check_and_send_reminders,
+    send_daily_digest,
+    send_weekly_summary,
+    send_afternoon_briefing,
+    send_weekly_summary_for_week,
+)
 
 
 def main() -> int:
@@ -15,8 +21,13 @@ def main() -> int:
             print(f"Daily digest sent: {ok}")
             return 1 if ok else 0
 
+        if mode == "afternoon":
+            ok = send_afternoon_briefing(db)
+            print(f"Afternoon briefing sent: {ok}")
+            return 1 if ok else 0
+
         if mode == "weekly":
-            ok = send_weekly_summary(db)
+            ok = send_weekly_summary_for_week(db, week_offset=0)
             print(f"Weekly summary sent: {ok}")
             return 1 if ok else 0
 
