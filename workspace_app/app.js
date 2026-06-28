@@ -33,6 +33,24 @@ function escapeHtml(value) {
   }[ch]));
 }
 
+function markdownToHtml(md) {
+  let html = escapeHtml(md);
+  // ## 제목
+  html = html.replace(/^## (.+)$/gm, "<h4>$1</h4>");
+  // ### 제목
+  html = html.replace(/^### (.+)$/gm, "<h5>$1</h5>");
+  // **굵게**
+  html = html.replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>");
+  // - 항목 (연속 줄을 ul로)
+  html = html.replace(/((?:^- .+\n?)+)/gm, (block) => {
+    const items = block.trim().split("\n").map(l => `<li>${l.replace(/^- /, "")}</li>`).join("");
+    return `<ul>${items}</ul>`;
+  });
+  // 빈 줄 → 단락 구분
+  html = html.replace(/\n{2,}/g, "</p><p>");
+  return `<p>${html}</p>`;
+}
+
 async function api(path, options = {}) {
   const headers = { "Content-Type": "application/json", ...(options.headers || {}) };
   if (token) headers.Authorization = `Bearer ${token}`;
@@ -754,6 +772,12 @@ function renderMeetingDetail(m) {
           <button data-relation-save="${idx}" class="small-primary">고객정보 저장</button>
         </div>
       `).join("") || `<p class="empty">추출된 고객 관계 정보가 없습니다.</p>`}
+    </div>
+    <div class="detail-section">
+      <h3>상세 보고 (프로젝트별)</h3>
+      ${a.full_report
+        ? `<div class="full-report-body">${markdownToHtml(a.full_report)}</div>`
+        : `<p class="empty">상세 보고서가 없습니다. '전체 재분석'을 실행하면 생성됩니다.</p>`}
     </div>
     <div class="detail-section"><h3>원문</h3><p class="meta">${escapeHtml((m.raw_text || "").slice(0, 1000))}</p></div>
   `;

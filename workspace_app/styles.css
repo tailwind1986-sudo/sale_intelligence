@@ -456,6 +456,13 @@ textarea { min-height: 72px; resize: vertical; }
   border-top: 1px solid #f0f0f0;
 }
 
+.full-report-body { line-height: 1.7; font-size: 14px; }
+.full-report-body h4 { margin: 14px 0 4px; font-size: 14px; font-weight: 700; color: var(--fg); }
+.full-report-body h5 { margin: 10px 0 3px; font-size: 13px; font-weight: 600; color: var(--muted); }
+.full-report-body ul { margin: 4px 0 8px 18px; padding: 0; }
+.full-report-body li { margin-bottom: 3px; }
+.full-report-body p { margin: 6px 0; }
+
 .mini-row:first-of-type { border-top: 0; }
 
 .mini-row strong,
