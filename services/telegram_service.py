@@ -313,7 +313,7 @@ def send_weekly_summary(db) -> bool:
         from openai import OpenAI
         client = OpenAI(api_key=openai_key)
         resp = client.chat.completions.create(
-            model="gpt-4o",
+            model="gpt-4.1",
             messages=[{"role": "user", "content": prompt}],
             max_tokens=1500,
             temperature=0.3,

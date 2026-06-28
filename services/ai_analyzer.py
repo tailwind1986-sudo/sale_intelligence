@@ -184,7 +184,7 @@ def analyze_meeting_transcript(transcript: str, prev_meetings: list | None = Non
         prompt = history_context + "\n\n" + prompt
 
     response = client.chat.completions.create(
-        model="gpt-4o",
+        model="gpt-4.1",
         messages=[
             {
                 "role": "system",
