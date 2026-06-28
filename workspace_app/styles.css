@@ -65,8 +65,8 @@ body {
   align-items: center;
   gap: 9px;
   font-size: 15px;
-  font-weight: 600;
-  color: var(--text);
+  font-weight: 700;
+  color: var(--accent);
   letter-spacing: -0.01em;
 }
 
@@ -192,6 +192,7 @@ body {
   padding: 0 18px;
   background: var(--surface);
   border-bottom: 1px solid var(--line);
+  box-shadow: 0 1px 4px rgba(0,0,0,0.04);
   gap: 12px;
 }
 
@@ -237,8 +238,10 @@ body {
 .metric {
   padding: 16px;
   border: 1px solid var(--line);
+  border-top: 3px solid var(--accent);
   border-radius: 10px;
   background: var(--surface);
+  box-shadow: 0 1px 3px rgba(0,0,0,0.04);
 }
 
 .metric strong {
@@ -247,6 +250,7 @@ body {
   font-weight: 700;
   line-height: 1;
   margin-bottom: 6px;
+  color: var(--accent);
 }
 
 .metric span {
@@ -300,19 +304,24 @@ h2 {
   padding: 0 14px;
   border: 0;
   border-radius: 8px;
-  background: #0d0d0d;
+  background: var(--accent);
   color: #fff;
   font-size: 13px;
   font-weight: 600;
   cursor: pointer;
-  transition: opacity 0.1s;
+  transition: opacity 0.12s, background 0.12s;
 }
 
-.small-primary:hover { opacity: 0.85; }
+.small-primary:hover { opacity: 0.88; }
 
 .danger-btn {
   background: #fee2e2 !important;
   color: #b91c1c !important;
+}
+
+.secondary-btn {
+  background: var(--accent-light) !important;
+  color: var(--nav-active-text) !important;
 }
 
 .filters {
@@ -369,6 +378,8 @@ textarea { min-height: 72px; resize: vertical; }
   color: var(--text);
 }
 
+.form-actions button:last-child:hover { background: #e4e4e4; }
+
 .list {
   display: flex;
   flex-direction: column;
@@ -410,10 +421,13 @@ textarea { min-height: 72px; resize: vertical; }
   background: #fff;
   text-align: left;
   cursor: pointer;
-  transition: border-color 0.1s;
+  transition: border-color 0.15s, box-shadow 0.15s;
 }
 
-.company-card:hover { border-color: #c0c0c0; }
+.company-card:hover {
+  border-color: var(--accent);
+  box-shadow: 0 2px 8px rgba(16,163,127,0.10);
+}
 
 .company-card strong,
 .company-card span,
@@ -455,6 +469,13 @@ textarea { min-height: 72px; resize: vertical; }
   margin-top: 16px;
   padding-top: 14px;
   border-top: 1px solid #f0f0f0;
+}
+
+.detail-section h3 {
+  color: var(--accent);
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.01em;
 }
 
 .mini-row {
@@ -501,7 +522,7 @@ textarea { min-height: 72px; resize: vertical; }
   padding: 0;
   background: none;
   border: none;
-  color: var(--fg);
+  color: var(--text);
 }
 
 .full-report-body { line-height: 1.7; font-size: 14px; }
@@ -907,6 +928,7 @@ textarea { min-height: 72px; resize: vertical; }
 .metric strong {
   margin: 0;
   font-size: 2rem;
+  color: var(--accent);
 }
 
 .metric em {
@@ -987,10 +1009,11 @@ textarea { min-height: 72px; resize: vertical; }
   white-space: nowrap;
 }
 
-.badge.active { background: #dbeafe; color: #1d4ed8; }
-.badge.done { background: #dcfce7; color: #047857; }
-.badge.danger { background: #fee2e2; color: #b91c1c; }
+.badge.active  { background: var(--accent-light); color: var(--nav-active-text); }
+.badge.done    { background: #dcfce7; color: #047857; }
+.badge.danger  { background: #fee2e2; color: #b91c1c; }
 .badge.neutral { background: #f3f4f6; color: #4b5563; }
+.badge.warn    { background: var(--warning-light); color: var(--warning); }
 
 /* 날짜 상대표현 색상 */
 time.date-today  { color: #0a7c5c; font-weight: 700; }
@@ -1027,7 +1050,7 @@ time.date-past   { color: var(--danger); }
 }
 
 .task-topline time {
-  color: var(--muted);
+  color: var(--blue);
   font-size: 12px;
   font-weight: 700;
 }
@@ -1113,8 +1136,8 @@ time.date-past   { color: var(--danger); }
 }
 
 .accept-btn {
-  background: #dcfce7 !important;
-  color: #047857 !important;
+  background: var(--accent-light) !important;
+  color: var(--nav-active-text) !important;
 }
 
 .task-actions {
