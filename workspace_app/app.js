@@ -33,16 +33,21 @@ function escapeHtml(value) {
   }[ch]));
 }
 
-function showToast(msg) {
+function showToast(msg, duration = 1800) {
+  // 기존 토스트 제거
+  document.querySelectorAll(".toast-popup").forEach(el => el.remove());
   const el = document.createElement("div");
   el.className = "toast-popup";
   el.textContent = msg;
   document.body.appendChild(el);
   setTimeout(() => el.classList.add("toast-show"), 10);
-  setTimeout(() => {
-    el.classList.remove("toast-show");
-    setTimeout(() => el.remove(), 300);
-  }, 1800);
+  if (duration > 0) {
+    setTimeout(() => {
+      el.classList.remove("toast-show");
+      setTimeout(() => el.remove(), 300);
+    }, duration);
+  }
+  return el;
 }
 
 function markdownToHtml(md) {
@@ -1123,13 +1128,15 @@ function bindEvents() {
     if (meetingAnalyze && confirm("이 미팅 기록을 전체 재분석할까요? 기존에 직접 수정한 액션/약속은 유지됩니다.")) {
       target.disabled = true;
       target.textContent = "분석 중…";
+      showToast("🔄 AI 분석 중입니다…", 0);
       try {
         await api(`/api/meetings/${meetingAnalyze}/analyze`, { method: "POST" });
         await openMeeting(meetingAnalyze);
         await loadMeetings();
         await loadCandidates();
+        showToast("✅ 분석 완료");
       } catch (e) {
-        alert("재분석 실패: " + e.message);
+        showToast("❌ 분석 실패: " + e.message);
         target.disabled = false;
         target.textContent = "전체 재분석";
       }
