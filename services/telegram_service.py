@@ -54,6 +54,31 @@ def _local_now_naive() -> datetime:
     return datetime.now(timezone).replace(tzinfo=None)
 
 
+def _relative_date(d) -> str:
+    """date 객체를 '오늘', '내일', '모레', '+N일', '어제', '-N일' 로 변환"""
+    from datetime import date as date_type
+    today = _local_now_naive().date()
+    if isinstance(d, datetime):
+        d = d.date()
+    if not isinstance(d, date_type):
+        return str(d)
+    diff = (d - today).days
+    if diff == 0: return "오늘"
+    if diff == 1: return "내일"
+    if diff == 2: return "모레"
+    if diff > 0: return f"+{diff}일"
+    if diff == -1: return "어제"
+    return f"{diff}일"
+
+def _fmt_date(d) -> str:
+    """'오늘(6/28)' 형태로 반환"""
+    if not d: return "기한미정"
+    from datetime import date as date_type
+    if isinstance(d, datetime): d = d.date()
+    rel = _relative_date(d)
+    return f"{rel}({d.month}/{d.day})"
+
+
 def _get_token() -> str:
     return _get_secret("TELEGRAM_BOT_TOKEN")
 
@@ -191,14 +216,14 @@ def send_daily_digest(db) -> bool:
 
     lines.append(f"\n<b>7일 내 액션 ({len(actions)}건)</b>")
     for a in actions:
-        due = a.due_date.strftime("%m/%d") if a.due_date else "기한미정"
+        due = _fmt_date(a.due_date)
         lines.append(f"• {due}{_company_label(a)} {_short(a.content)}")
     if not actions:
         lines.append("• 7일 내 마감 액션 없음")
 
     lines.append(f"\n<b>미확인 약속 ({len(promises)}건)</b>")
     for p in promises:
-        due = p.due_date.strftime("%m/%d") if p.due_date else "기한미정"
+        due = _fmt_date(p.due_date)
         lines.append(f"• {due}{_company_label(p)} {_short(p.content)}")
     if not promises:
         lines.append("• 7일 내 확인할 약속 없음")
@@ -524,7 +549,7 @@ def send_daily_digest_for_date(db, target_date) -> bool:
         .all()
     )
 
-    date_str = target_date.strftime("%m월 %d일")
+    date_str = _fmt_date(target_date)
     lines = [f"📅 <b>{date_str} 회의록 정리</b>"]
 
     if not meetings:

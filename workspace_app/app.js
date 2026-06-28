@@ -33,6 +33,23 @@ function escapeHtml(value) {
   }[ch]));
 }
 
+function relativeDate(dateStr) {
+  if (!dateStr) return "";
+  const today = new Date(); today.setHours(0,0,0,0);
+  const target = new Date(dateStr); target.setHours(0,0,0,0);
+  const diff = Math.round((target - today) / 86400000);
+  const label = diff === 0 ? "오늘" : diff === 1 ? "내일" : diff === 2 ? "모레" : diff > 0 ? `+${diff}일` : diff === -1 ? "어제" : `${diff}일`;
+  return label;
+}
+
+function formatDateWithRelative(dateStr) {
+  if (!dateStr) return "";
+  const rel = relativeDate(dateStr);
+  const d = new Date(dateStr);
+  const mmdd = `${d.getMonth()+1}/${d.getDate()}`;
+  return rel ? `${rel} (${mmdd})` : mmdd;
+}
+
 function showToast(msg, duration = 1800) {
   // 기존 토스트 제거
   document.querySelectorAll(".toast-popup").forEach(el => el.remove());
@@ -192,14 +209,16 @@ function dashboardCard(row, type) {
   const status = row.status || "";
   const meta = [company, timeText, people].filter(Boolean).join(" · ");
   const tone = row.is_overdue ? "danger" : statusTone(status);
+  const diff = date ? Math.round((new Date(date).setHours(0,0,0,0) - new Date().setHours(0,0,0,0)) / 86400000) : null;
+  const dateClass = diff === 0 ? "date-today" : diff === 1 ? "date-tomorrow" : (diff !== null && diff < 0) ? "date-past" : "";
   return `
     <div class="dash-item ${type} ${row.is_overdue ? "overdue" : ""}">
       <div class="dash-main">
         <strong>${escapeHtml(title)}</strong>
-        <span>${escapeHtml(meta || date || "세부 정보 없음")}</span>
+        <span>${escapeHtml(meta || "세부 정보 없음")}</span>
       </div>
       <div class="dash-side">
-        ${date ? `<time>${escapeHtml(date)}</time>` : ""}
+        ${date ? `<time class="${dateClass}">${escapeHtml(formatDateWithRelative(date))}</time>` : ""}
         ${status ? badge(status, tone) : ""}
       </div>
     </div>
@@ -287,7 +306,7 @@ function renderActions() {
         <div class="task-topline">
           ${badge(row.status || "예정", statusTone(row.status))}
           ${row.is_overdue ? badge("기한 초과", "danger") : ""}
-          ${row.due_date ? `<time>${escapeHtml(row.due_date)}</time>` : `<time>기한 없음</time>`}
+          ${row.due_date ? `<time class="${(() => { const d = Math.round((new Date(row.due_date).setHours(0,0,0,0) - new Date().setHours(0,0,0,0))/86400000); return d===0?"date-today":d===1?"date-tomorrow":d<0?"date-past":""; })()}">${escapeHtml(formatDateWithRelative(row.due_date))}</time>` : `<time>기한 없음</time>`}
         </div>
         <strong>${escapeHtml(row.content)}</strong>
         <span>${escapeHtml([row.company_name, row.assignee || "담당자 미정"].filter(Boolean).join(" · "))}</span>
@@ -350,7 +369,7 @@ function renderPromises() {
         <div class="task-topline">
           ${badge(row.status || "미확인", statusTone(row.status))}
           ${row.is_overdue ? badge("확인 지연", "danger") : ""}
-          ${row.due_date ? `<time>${escapeHtml(row.due_date)}</time>` : `<time>기한 없음</time>`}
+          ${row.due_date ? `<time class="${(() => { const d = Math.round((new Date(row.due_date).setHours(0,0,0,0) - new Date().setHours(0,0,0,0))/86400000); return d===0?"date-today":d===1?"date-tomorrow":d<0?"date-past":""; })()}">${escapeHtml(formatDateWithRelative(row.due_date))}</time>` : `<time>기한 없음</time>`}
         </div>
         <strong>${escapeHtml(row.content)}</strong>
         <span>${escapeHtml([row.company_name, row.promised_by || "약속자 미정"].filter(Boolean).join(" · "))}</span>

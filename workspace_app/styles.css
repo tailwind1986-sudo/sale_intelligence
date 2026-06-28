@@ -1,18 +1,23 @@
 :root {
   --sidebar-w: 240px;
   --topbar-h: 52px;
-  --bg: #f4f4f4;
-  --sidebar-bg: #f9f9f9;
+  --bg: #f0f2f5;
+  --sidebar-bg: #ffffff;
   --surface: #ffffff;
   --text: #0d0d0d;
   --muted: #6b7280;
-  --line: #e5e5e5;
+  --line: #e5e7eb;
   --accent: #10a37f;
+  --accent-light: #e6f4f0;
   --blue: #2563eb;
+  --blue-light: #eff6ff;
   --danger: #dc2626;
-  --nav-hover: #ececec;
-  --nav-active-bg: #e8e8e8;
-  --nav-active-text: #0d0d0d;
+  --danger-light: #fef2f2;
+  --warning: #d97706;
+  --warning-light: #fffbeb;
+  --nav-hover: #f3f4f6;
+  --nav-active-bg: #e6f4f0;
+  --nav-active-text: #0a7c5c;
 }
 
 * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -252,9 +257,10 @@ body {
 
 .panel {
   border: 1px solid var(--line);
-  border-radius: 10px;
+  border-radius: 12px;
   background: var(--surface);
   padding: 18px;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.05);
 }
 
 h2 {
@@ -968,9 +974,15 @@ textarea { min-height: 72px; resize: vertical; }
   white-space: nowrap;
 }
 
-.badge.active { background: #e0f2fe; color: #0369a1; }
+.badge.active { background: #dbeafe; color: #1d4ed8; }
 .badge.done { background: #dcfce7; color: #047857; }
 .badge.danger { background: #fee2e2; color: #b91c1c; }
+.badge.neutral { background: #f3f4f6; color: #4b5563; }
+
+/* 날짜 상대표현 색상 */
+time.date-today  { color: #0a7c5c; font-weight: 700; }
+time.date-tomorrow { color: #2563eb; font-weight: 600; }
+time.date-past   { color: var(--danger); }
 
 .panel-head p {
   margin-top: 3px;
