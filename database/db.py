@@ -36,6 +36,7 @@ def _ensure_meeting_analysis_columns() -> None:
         "risks_and_checks": "JSON",
         "relationship_notes": "JSON",
         "schedule_candidates": "JSON",
+        "full_report": "TEXT",
     }
     with _engine.begin() as conn:
         existing = {

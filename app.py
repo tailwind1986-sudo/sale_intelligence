@@ -1436,6 +1436,7 @@ def _save_analysis(db, record: MeetingRecord, result: dict) -> None:
         meeting_id=record.id,
         one_line_summary=result.get("one_line_summary"),
         detailed_summary=result.get("detailed_summary"),
+        full_report=result.get("full_report"),
         meeting_overview=result.get("meeting_overview", {}),
         topic_discussions=result.get("topic_discussions", []),
         key_discussions=result.get("key_discussions", []),
@@ -1556,6 +1557,7 @@ def _update_analysis_result(analysis: MeetingAnalysis, result: dict, *, schedule
 
     analysis.one_line_summary = result.get("one_line_summary")
     analysis.detailed_summary = result.get("detailed_summary")
+    analysis.full_report = result.get("full_report")
     analysis.meeting_overview = result.get("meeting_overview", {})
     analysis.topic_discussions = result.get("topic_discussions", [])
     analysis.key_discussions = result.get("key_discussions", [])
@@ -1717,8 +1719,8 @@ def _render_enhanced_meeting_result(db, sel_meeting: MeetingRecord) -> None:
 
     st.info(a.one_line_summary or "한 줄 결론이 없습니다.")
 
-    report_tab, action_tab, schedule_tab, relation_tab, copy_tab, raw_tab = st.tabs(
-        ["보고서", "후속조치", "일정", "고객관계", "카톡보고", "원문"]
+    report_tab, action_tab, schedule_tab, relation_tab, copy_tab, full_tab, raw_tab = st.tabs(
+        ["보고서", "후속조치", "일정", "고객관계", "카톡보고", "상세보고", "원문"]
     )
 
     with report_tab:
@@ -1874,6 +1876,14 @@ def _render_enhanced_meeting_result(db, sel_meeting: MeetingRecord) -> None:
             height=150,
             key=f"kakao_report_enhanced_{sel_meeting.id}",
         )
+
+    with full_tab:
+        st.subheader("프로젝트별 상세 보고")
+        full_report = getattr(a, "full_report", None)
+        if full_report:
+            st.markdown(full_report)
+        else:
+            st.info("상세 보고서가 없습니다. '전체 재분석'을 실행하면 생성됩니다.")
 
     with raw_tab:
         st.text_area("원문 회의록", sel_meeting.raw_text or "", height=420, disabled=True)

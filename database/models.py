@@ -119,6 +119,7 @@ class MeetingAnalysis(Base):
     meeting_id = Column(Integer, ForeignKey("meeting_records.id"), nullable=False, unique=True)
     one_line_summary = Column(Text)
     detailed_summary = Column(Text)
+    full_report = Column(Text)
     meeting_overview = Column(JSON)
     topic_discussions = Column(JSON)
     key_discussions = Column(JSON)
