@@ -1,0 +1,18 @@
+# Sales Intelligence - Oracle 서버 crontab 설정
+# 적용 방법: crontab -e 후 아래 내용 붙여넣기
+# 서버 시간대: UTC (KST = UTC+9 이므로 -9 적용)
+
+# 알림 체크 - 매 5분
+*/5 * * * * cd /home/ubuntu/app && /home/ubuntu/app/venv/bin/python reminder_worker.py >> /home/ubuntu/logs/reminder.log 2>&1
+
+# 아침 브리핑 (일정·할일) - 매일 오전 8시 KST = UTC 23시 (전날)
+0 23 * * * cd /home/ubuntu/app && /home/ubuntu/app/venv/bin/python reminder_worker.py digest >> /home/ubuntu/logs/reminder.log 2>&1
+
+# 오후 브리핑 (회의록 정리) - 매일 오후 5시 30분 KST = UTC 08시 30분
+30 8 * * * cd /home/ubuntu/app && /home/ubuntu/app/venv/bin/python reminder_worker.py afternoon >> /home/ubuntu/logs/reminder.log 2>&1
+
+# 주간 요약 - 매주 금요일 오전 11시 KST = UTC 02시 (금요일)
+0 2 * * 5 cd /home/ubuntu/app && /home/ubuntu/app/venv/bin/python reminder_worker.py weekly >> /home/ubuntu/logs/reminder.log 2>&1
+
+# DB 백업 - 매일 새벽 2시 KST = UTC 17시 (전날)
+0 17 * * * /bin/bash /home/ubuntu/app/deploy/oracle/backup.sh >> /home/ubuntu/logs/backup.log 2>&1
