@@ -798,8 +798,13 @@ function renderMeetingDetail(m) {
     ${listBlock("후속조치", a.action_items_structured || [], item => typeof item === "object" ? `${item.task || item.content || "-"} / ${item.assignee || "담당자 확인"} / ${item.due_date || "기한 확인"}` : String(item))}
     ${listBlock("리스크/확인", a.risks_and_checks || [])}
     <div class="detail-section">
-      <h3>카톡/문자 보고</h3>
-      <textarea readonly>${escapeHtml(m.compact_report || "")}</textarea>
+      <div style="display:flex;align-items:center;gap:8px">
+        <h3 style="margin:0">카톡/문자 보고</h3>
+        ${m.compact_report ? `<button class="copy-report-btn" data-copy-kakao>복사</button>` : ""}
+      </div>
+      ${m.compact_report
+        ? `<pre class="kakao-report-body" id="kakaoReportBody">${escapeHtml(m.compact_report)}</pre>`
+        : `<p class="empty">카톡 보고 내용이 없습니다.</p>`}
     </div>
     <div class="detail-section">
       <h3>고객 관계 정보</h3>
@@ -1214,6 +1219,12 @@ function bindEvents() {
     if (target.dataset.copyReport !== undefined) {
       const reportEl = document.getElementById("fullReportBody");
       const text = reportEl ? reportEl.innerText : "";
+      navigator.clipboard.writeText(text).then(() => showToast("복사 완료"));
+    }
+
+    if (target.dataset.copyKakao !== undefined) {
+      const el = document.getElementById("kakaoReportBody");
+      const text = el ? el.innerText : "";
       navigator.clipboard.writeText(text).then(() => showToast("복사 완료"));
     }
 

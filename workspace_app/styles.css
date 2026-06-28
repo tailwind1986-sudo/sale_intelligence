@@ -491,6 +491,19 @@ textarea { min-height: 72px; resize: vertical; }
 }
 .toast-popup.toast-show { opacity: 1; transform: translateX(-50%) translateY(0); }
 
+.kakao-report-body {
+  font-family: inherit;
+  font-size: 14px;
+  line-height: 1.7;
+  white-space: pre-wrap;
+  word-break: break-word;
+  margin: 10px 0 0;
+  padding: 0;
+  background: none;
+  border: none;
+  color: var(--fg);
+}
+
 .full-report-body { line-height: 1.7; font-size: 14px; }
 .full-report-body h4 { margin: 14px 0 4px; font-size: 14px; font-weight: 700; color: var(--fg); }
 .full-report-body h5 { margin: 10px 0 3px; font-size: 13px; font-weight: 600; color: var(--muted); }
