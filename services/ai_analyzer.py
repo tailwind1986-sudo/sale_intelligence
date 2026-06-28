@@ -84,10 +84,12 @@ full_report 작성 원칙 (가장 중요):
 {transcript}
 
 아래 JSON 형식으로만 반환하세요. 코드블록을 쓰지 마세요.
+반드시 full_report를 가장 먼저 작성하세요. full_report는 절대 비워두지 마세요.
+
 {{
+  "full_report": "## 프로젝트명\n### 주제\n- 논의내용\n\n형식으로 프로젝트별 상세 보고서 작성. 마크다운 사용. 분량 제한 없음. 이해관계자 입장 구분, 기술 세부사항, 결정사항, 쟁점, Action 포함.",
   "one_line_summary": "회의의 핵심 방향과 다음 액션을 한 문장으로 정리",
   "detailed_summary": "회의 전체 흐름을 간결하게 요약 (3~5문장, 핵심만)",
-  "full_report": "프로젝트별/주제별로 분리한 상세 보고서. 마크다운 형식으로 작성. 분량 제한 없음. 논의 내용, 이해관계자 입장, 기술적 세부사항, 결정사항, 쟁점, Action을 빠짐없이 서술.",
   "meeting_overview": {{
     "topic": "회의 주제 또는 확인 필요",
     "attendees": "주요 참석자 또는 확인 필요",
@@ -198,12 +200,12 @@ def analyze_meeting_transcript(transcript: str, prev_meetings: list | None = Non
         messages=[
             {
                 "role": "system",
-                "content": "당신은 영업 회의록 분석 전문가입니다. 반드시 유효한 JSON 객체만 응답합니다.",
+                "content": "당신은 영업 회의록 분석 전문가입니다. 반드시 유효한 JSON 객체만 응답합니다. JSON의 첫 번째 필드인 full_report를 반드시 충분한 내용으로 작성하세요. full_report를 비우거나 생략하지 마세요.",
             },
             {"role": "user", "content": prompt},
         ],
         temperature=0.2,
-        max_tokens=10000,
+        max_tokens=16000,
         response_format={"type": "json_object"},
     )
 
