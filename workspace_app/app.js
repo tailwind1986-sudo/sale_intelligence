@@ -33,6 +33,18 @@ function escapeHtml(value) {
   }[ch]));
 }
 
+function showToast(msg) {
+  const el = document.createElement("div");
+  el.className = "toast-popup";
+  el.textContent = msg;
+  document.body.appendChild(el);
+  setTimeout(() => el.classList.add("toast-show"), 10);
+  setTimeout(() => {
+    el.classList.remove("toast-show");
+    setTimeout(() => el.remove(), 300);
+  }, 1800);
+}
+
 function markdownToHtml(md) {
   let html = escapeHtml(md);
   // ## 제목
@@ -775,9 +787,12 @@ function renderMeetingDetail(m) {
       `).join("") || `<p class="empty">추출된 고객 관계 정보가 없습니다.</p>`}
     </div>
     <div class="detail-section">
-      <h3>상세 보고 (프로젝트별)</h3>
+      <div style="display:flex;align-items:center;gap:8px">
+        <h3 style="margin:0">상세 보고 (프로젝트별)</h3>
+        ${a.full_report ? `<button class="copy-report-btn" data-copy-report>복사</button>` : ""}
+      </div>
       ${a.full_report
-        ? `<div class="full-report-body">${markdownToHtml(a.full_report)}</div>`
+        ? `<div class="full-report-body" id="fullReportBody">${markdownToHtml(a.full_report)}</div>`
         : `<p class="empty">상세 보고서가 없습니다. '전체 재분석'을 실행하면 생성됩니다.</p>`}
     </div>
     <div class="detail-section"><h3>원문</h3><p class="meta">${escapeHtml((m.raw_text || "").slice(0, 1000))}</p></div>
@@ -1168,6 +1183,12 @@ function bindEvents() {
       } catch (e) {
         $("telegramResult").textContent = "전송 실패: " + e.message;
       }
+    }
+
+    if (target.dataset.copyReport !== undefined) {
+      const reportEl = document.getElementById("fullReportBody");
+      const text = reportEl ? reportEl.innerText : "";
+      navigator.clipboard.writeText(text).then(() => showToast("복사 완료"));
     }
 
     if (target.id === "tgDateBriefingBtn") {
