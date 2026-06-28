@@ -141,6 +141,7 @@ class MeetingAnalysis(Base):
     trust_score = Column(Integer)
     risk_score = Column(Integer)
     created_at = Column(DateTime, default=datetime.now)
+    analyzed_at = Column(DateTime, default=datetime.now)
 
     meeting = relationship("MeetingRecord", back_populates="analysis")
 

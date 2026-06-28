@@ -722,6 +722,7 @@ def _analysis_from_result(record: MeetingRecord, result: dict) -> MeetingAnalysi
         one_line_summary=result.get("one_line_summary"),
         detailed_summary=result.get("detailed_summary"),
         full_report=result.get("full_report"),
+        analyzed_at=datetime.now(),
         meeting_overview=result.get("meeting_overview", {}),
         topic_discussions=result.get("topic_discussions", []),
         key_discussions=result.get("key_discussions", []),
@@ -774,6 +775,7 @@ def _update_meeting_analysis(analysis: MeetingAnalysis, result: dict, *, schedul
     analysis.one_line_summary = result.get("one_line_summary")
     analysis.detailed_summary = result.get("detailed_summary")
     analysis.full_report = result.get("full_report")
+    analysis.analyzed_at = datetime.now()
     analysis.meeting_overview = result.get("meeting_overview", {})
     analysis.topic_discussions = result.get("topic_discussions", [])
     analysis.key_discussions = result.get("key_discussions", [])
@@ -1602,6 +1604,7 @@ def meeting_detail(meeting_id: int, db: Session = Depends(get_db)):
             "one_line_summary": a.one_line_summary or "",
             "detailed_summary": a.detailed_summary or "",
             "full_report": a.full_report or "",
+            "analyzed_at": a.analyzed_at.strftime("%Y-%m-%d %H:%M") if a.analyzed_at else (a.created_at.strftime("%Y-%m-%d %H:%M") if a.created_at else ""),
             "meeting_overview": _json_dict(a.meeting_overview),
             "topic_discussions": _json_list(a.topic_discussions),
             "decisions": _json_list(a.decisions),

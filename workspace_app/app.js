@@ -755,6 +755,7 @@ function renderMeetingDetail(m) {
       </div>
     </div>
     <p class="title">${escapeHtml(a.one_line_summary || "한 줄 결론 없음")}</p>
+    ${a.analyzed_at ? `<p class="meta" style="margin-top:2px">AI 분석: ${escapeHtml(a.analyzed_at)}</p>` : ""}
     <div class="detail-section"><h3>전체 요약</h3><p>${escapeHtml(a.detailed_summary || "-")}</p></div>
     ${listBlock("핵심 논의", a.topic_discussions || [], renderTopic)}
     ${listBlock("결정사항", a.decisions || [])}
@@ -1105,10 +1106,18 @@ function bindEvents() {
     }
     const meetingAnalyze = target.dataset.meetingAnalyze;
     if (meetingAnalyze && confirm("이 미팅 기록을 전체 재분석할까요? 기존에 직접 수정한 액션/약속은 유지됩니다.")) {
-      await api(`/api/meetings/${meetingAnalyze}/analyze`, { method: "POST" });
-      await openMeeting(meetingAnalyze);
-      await loadMeetings();
-      await loadCandidates();
+      target.disabled = true;
+      target.textContent = "분석 중…";
+      try {
+        await api(`/api/meetings/${meetingAnalyze}/analyze`, { method: "POST" });
+        await openMeeting(meetingAnalyze);
+        await loadMeetings();
+        await loadCandidates();
+      } catch (e) {
+        alert("재분석 실패: " + e.message);
+        target.disabled = false;
+        target.textContent = "전체 재분석";
+      }
     }
     const meetingScheduleAnalyze = target.dataset.meetingScheduleAnalyze;
     if (meetingScheduleAnalyze && confirm("이 미팅 기록에서 일정 후보만 다시 추출할까요?")) {
