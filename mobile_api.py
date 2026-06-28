@@ -6,6 +6,12 @@ import os
 from calendar import monthrange
 from datetime import date, datetime, time, timedelta
 from pathlib import Path
+from zoneinfo import ZoneInfo
+
+_KST = ZoneInfo("Asia/Seoul")
+
+def _now_kst() -> datetime:
+    return datetime.now(_KST).replace(tzinfo=None)
 
 try:
     import tomllib
@@ -722,7 +728,7 @@ def _analysis_from_result(record: MeetingRecord, result: dict) -> MeetingAnalysi
         one_line_summary=result.get("one_line_summary"),
         detailed_summary=result.get("detailed_summary"),
         full_report=result.get("full_report"),
-        analyzed_at=datetime.now(),
+        analyzed_at=_now_kst(),
         meeting_overview=result.get("meeting_overview", {}),
         topic_discussions=result.get("topic_discussions", []),
         key_discussions=result.get("key_discussions", []),
@@ -775,7 +781,7 @@ def _update_meeting_analysis(analysis: MeetingAnalysis, result: dict, *, schedul
     analysis.one_line_summary = result.get("one_line_summary")
     analysis.detailed_summary = result.get("detailed_summary")
     analysis.full_report = result.get("full_report")
-    analysis.analyzed_at = datetime.now()
+    analysis.analyzed_at = _now_kst()
     analysis.meeting_overview = result.get("meeting_overview", {})
     analysis.topic_discussions = result.get("topic_discussions", [])
     analysis.key_discussions = result.get("key_discussions", [])
