@@ -13,6 +13,16 @@ class Base(DeclarativeBase):
     pass
 
 
+class ScheduleCategory(Base):
+    __tablename__ = "schedule_categories"
+
+    id = Column(Integer, primary_key=True)
+    name = Column(String(100), nullable=False)
+    color = Column(String(20), default="#3B82F6")
+    sort_order = Column(Integer, default=0)
+    created_at = Column(DateTime, default=datetime.now)
+
+
 class Schedule(Base):
     __tablename__ = "schedules"
 
@@ -24,14 +34,23 @@ class Schedule(Base):
     all_day = Column(Boolean, default=False)
     color = Column(String(20), default="#1E40AF")
     company_id = Column(Integer, ForeignKey("companies.id"), nullable=True)
+    category_id = Column(Integer, ForeignKey("schedule_categories.id"), nullable=True)
     remind_enabled = Column(Boolean, default=True)
-    remind_minutes = Column(Integer, default=1440)   # 기본 1일 전(1440분)
+    remind_minutes = Column(Integer, default=1440)
     remind_sent = Column(Boolean, default=False)
-    briefing_sent = Column(Boolean, default=False)   # 미팅 전 브리핑 발송 여부
+    remind_times = Column(JSON, nullable=True)        # [{"minutes": N, "sent": false}, ...]
+    briefing_sent = Column(Boolean, default=False)
+    recur_type = Column(String(20), nullable=True)    # daily/weekly/monthly/yearly
+    recur_interval = Column(Integer, default=1)
+    recur_days_of_week = Column(JSON, nullable=True)  # [0..6] 0=월
+    recur_end_date = Column(Date, nullable=True)
+    recur_last_reminded = Column(Date, nullable=True)
+    recur_last_briefing = Column(Date, nullable=True)
     created_at = Column(DateTime, default=datetime.now)
     updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
 
     company = relationship("Company", backref="schedules")
+    category = relationship("ScheduleCategory", backref="schedules")
 
 
 class Company(Base):

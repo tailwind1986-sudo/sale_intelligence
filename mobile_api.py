@@ -33,7 +33,7 @@ from sqlalchemy.orm.attributes import flag_modified
 load_dotenv()
 
 from database.db import SessionLocal, create_database
-from database.models import ActionItem, Company, CompanyHistory, Contact, CustomerInfo, IssueTag, MeetingAnalysis, MeetingRecord, MonthlyInsight, MonthlyReport, Promise, SalesSignal, Schedule
+from database.models import ActionItem, Company, CompanyHistory, Contact, CustomerInfo, IssueTag, MeetingAnalysis, MeetingRecord, MonthlyInsight, MonthlyReport, Promise, SalesSignal, Schedule, ScheduleCategory
 from services.ai_analyzer import analyze_meeting_transcript, generate_monthly_insight, generate_monthly_insight_for_company
 
 
@@ -112,8 +112,20 @@ class SchedulePayload(BaseModel):
     all_day: bool = True
     color: str = "#2563EB"
     company_id: int | None = None
+    category_id: int | None = None
     remind_enabled: bool = True
     remind_minutes: int = 1440
+    remind_times: list | None = None   # [{"minutes": N}, ...]  — None = legacy mode
+    recur_type: str | None = None      # daily/weekly/monthly/yearly
+    recur_interval: int = 1
+    recur_days_of_week: list | None = None
+    recur_end_date: date | None = None
+
+
+class ScheduleCategoryPayload(BaseModel):
+    name: str
+    color: str = "#3B82F6"
+    sort_order: int = 0
 
 
 class ActionPayload(BaseModel):
@@ -556,10 +568,105 @@ def _schedule_to_dict(s: Schedule):
         "color": s.color or "#2563EB",
         "company_id": s.company_id,
         "company_name": s.company.name if s.company else "",
+        "category_id": s.category_id,
+        "category_name": s.category.name if s.category else None,
+        "category_color": s.category.color if s.category else None,
         "remind_enabled": bool(s.remind_enabled),
         "remind_minutes": s.remind_minutes or 1440,
         "remind_sent": bool(s.remind_sent),
+        "remind_times": s.remind_times,
+        "recur_type": s.recur_type,
+        "recur_interval": s.recur_interval or 1,
+        "recur_days_of_week": s.recur_days_of_week,
+        "recur_end_date": s.recur_end_date.isoformat() if s.recur_end_date else None,
+        "is_recurring": bool(s.recur_type),
     }
+
+
+def _expand_recurring(s: Schedule, range_start: date, range_end: date) -> list[dict]:
+    """반복 일정을 날짜 범위 내 인스턴스로 확장."""
+    from datetime import timedelta as td
+    if not s.recur_type:
+        return [_schedule_to_dict(s)]
+
+    base = _schedule_to_dict(s)
+    master_start = s.start_dt.date()
+    duration = s.end_dt - s.start_dt
+    end_cap = s.recur_end_date  # None = 무한
+    interval = max(1, s.recur_interval or 1)
+    days_of_week = s.recur_days_of_week or [master_start.weekday()]
+
+    def _make_instance(occ_date: date) -> dict:
+        inst_start = datetime.combine(occ_date, s.start_dt.time())
+        inst_end = inst_start + duration
+        d = dict(base)
+        d["id"] = f"r{s.id}_{occ_date.isoformat()}"
+        d["start_date"] = occ_date.isoformat()
+        d["end_date"] = inst_end.date().isoformat()
+        d["start_time"] = None if s.all_day else inst_start.strftime("%H:%M")
+        d["end_time"] = None if s.all_day else inst_end.strftime("%H:%M")
+        d["is_recurring_instance"] = True
+        d["recur_master_id"] = s.id
+        return d
+
+    instances = []
+
+    if s.recur_type == "daily":
+        cur = master_start
+        while cur <= range_end:
+            if end_cap and cur > end_cap:
+                break
+            if cur >= range_start:
+                instances.append(_make_instance(cur))
+            cur += td(days=interval)
+
+    elif s.recur_type == "weekly":
+        week_mon = master_start - td(days=master_start.weekday())
+        while week_mon <= range_end:
+            for dow in sorted(days_of_week):
+                occ = week_mon + td(days=dow)
+                if occ < master_start:
+                    continue
+                if end_cap and occ > end_cap:
+                    break
+                if range_start <= occ <= range_end:
+                    instances.append(_make_instance(occ))
+            week_mon += td(weeks=interval)
+
+    elif s.recur_type == "monthly":
+        yr, mo = master_start.year, master_start.month
+        while True:
+            import calendar
+            last_day = calendar.monthrange(yr, mo)[1]
+            day = min(master_start.day, last_day)
+            occ = date(yr, mo, day)
+            if occ > range_end:
+                break
+            if end_cap and occ > end_cap:
+                break
+            if occ >= master_start and occ >= range_start:
+                instances.append(_make_instance(occ))
+            mo += interval
+            while mo > 12:
+                mo -= 12
+                yr += 1
+
+    elif s.recur_type == "yearly":
+        yr = master_start.year
+        while True:
+            import calendar
+            last_day = calendar.monthrange(yr, master_start.month)[1]
+            day = min(master_start.day, last_day)
+            occ = date(yr, master_start.month, day)
+            if occ > range_end:
+                break
+            if end_cap and occ > end_cap:
+                break
+            if occ >= master_start and occ >= range_start:
+                instances.append(_make_instance(occ))
+            yr += interval
+
+    return instances
 
 
 def _meeting_to_dict(m: MeetingRecord):
@@ -2014,12 +2121,54 @@ def delete_meeting(meeting_id: int, db: Session = Depends(get_db)):
     return {"ok": True}
 
 
+@app.get("/api/schedule-categories", dependencies=[Depends(_require_auth)])
+def list_schedule_categories(db: Session = Depends(get_db)):
+    cats = db.query(ScheduleCategory).order_by(ScheduleCategory.sort_order, ScheduleCategory.id).all()
+    return [{"id": c.id, "name": c.name, "color": c.color, "sort_order": c.sort_order} for c in cats]
+
+
+@app.post("/api/schedule-categories", dependencies=[Depends(_require_auth)])
+def create_schedule_category(payload: ScheduleCategoryPayload, db: Session = Depends(get_db)):
+    cat = ScheduleCategory(name=payload.name, color=payload.color, sort_order=payload.sort_order)
+    db.add(cat)
+    db.commit()
+    db.refresh(cat)
+    return {"id": cat.id, "name": cat.name, "color": cat.color, "sort_order": cat.sort_order}
+
+
+@app.put("/api/schedule-categories/{cat_id}", dependencies=[Depends(_require_auth)])
+def update_schedule_category(cat_id: int, payload: ScheduleCategoryPayload, db: Session = Depends(get_db)):
+    cat = db.get(ScheduleCategory, cat_id)
+    if not cat:
+        raise HTTPException(status_code=404, detail="Category not found")
+    cat.name = payload.name
+    cat.color = payload.color
+    cat.sort_order = payload.sort_order
+    db.commit()
+    return {"id": cat.id, "name": cat.name, "color": cat.color, "sort_order": cat.sort_order}
+
+
+@app.delete("/api/schedule-categories/{cat_id}", dependencies=[Depends(_require_auth)])
+def delete_schedule_category(cat_id: int, db: Session = Depends(get_db)):
+    cat = db.get(ScheduleCategory, cat_id)
+    if not cat:
+        raise HTTPException(status_code=404, detail="Category not found")
+    db.query(Schedule).filter(Schedule.category_id == cat_id).update({"category_id": None})
+    db.delete(cat)
+    db.commit()
+    return {"ok": True}
+
+
 @app.get("/api/calendar/month", dependencies=[Depends(_require_auth)])
 def calendar_month(year: int, month: int, company_id: int | None = None, db: Session = Depends(get_db)):
     start, end = _month_bounds(year, month)
-    schedules_q = db.query(Schedule).options(joinedload(Schedule.company)).filter(
+    non_recur_q = db.query(Schedule).options(joinedload(Schedule.company), joinedload(Schedule.category)).filter(
+        Schedule.recur_type.is_(None),
         Schedule.start_dt <= end,
         Schedule.end_dt >= start,
+    )
+    recur_q = db.query(Schedule).options(joinedload(Schedule.company), joinedload(Schedule.category)).filter(
+        Schedule.recur_type.isnot(None),
     )
     meetings_q = db.query(MeetingRecord).options(
         joinedload(MeetingRecord.company),
@@ -2029,10 +2178,15 @@ def calendar_month(year: int, month: int, company_id: int | None = None, db: Ses
         MeetingRecord.meeting_date <= end.date(),
     )
     if company_id:
-        schedules_q = schedules_q.filter(Schedule.company_id == company_id)
+        non_recur_q = non_recur_q.filter(Schedule.company_id == company_id)
+        recur_q = recur_q.filter(Schedule.company_id == company_id)
         meetings_q = meetings_q.filter(MeetingRecord.company_id == company_id)
+    schedules = [_schedule_to_dict(s) for s in non_recur_q.order_by(Schedule.start_dt).all()]
+    for s in recur_q.all():
+        schedules.extend(_expand_recurring(s, start.date(), end.date()))
+    schedules.sort(key=lambda x: x["start_date"])
     return {
-        "schedules": [_schedule_to_dict(s) for s in schedules_q.order_by(Schedule.start_dt).all()],
+        "schedules": schedules,
         "meetings": [_meeting_to_dict(m) for m in meetings_q.order_by(MeetingRecord.meeting_date.desc()).all()],
     }
 
@@ -2041,21 +2195,37 @@ def calendar_month(year: int, month: int, company_id: int | None = None, db: Ses
 def calendar_day(day: date, company_id: int | None = None, db: Session = Depends(get_db)):
     day_start = datetime.combine(day, time.min)
     day_end = datetime.combine(day, time.max)
-    schedules_q = db.query(Schedule).options(joinedload(Schedule.company)).filter(
+    non_recur_q = db.query(Schedule).options(joinedload(Schedule.company), joinedload(Schedule.category)).filter(
+        Schedule.recur_type.is_(None),
         Schedule.start_dt <= day_end,
         Schedule.end_dt >= day_start,
+    )
+    recur_q = db.query(Schedule).options(joinedload(Schedule.company), joinedload(Schedule.category)).filter(
+        Schedule.recur_type.isnot(None),
     )
     meetings_q = db.query(MeetingRecord).options(
         joinedload(MeetingRecord.company),
         joinedload(MeetingRecord.analysis),
     ).filter(MeetingRecord.meeting_date == day)
     if company_id:
-        schedules_q = schedules_q.filter(Schedule.company_id == company_id)
+        non_recur_q = non_recur_q.filter(Schedule.company_id == company_id)
+        recur_q = recur_q.filter(Schedule.company_id == company_id)
         meetings_q = meetings_q.filter(MeetingRecord.company_id == company_id)
+    schedules = [_schedule_to_dict(s) for s in non_recur_q.order_by(Schedule.all_day.desc(), Schedule.start_dt).all()]
+    for s in recur_q.all():
+        schedules.extend(_expand_recurring(s, day, day))
+    schedules.sort(key=lambda x: (not x["all_day"], x["start_time"] or ""))
     return {
-        "schedules": [_schedule_to_dict(s) for s in schedules_q.order_by(Schedule.all_day.desc(), Schedule.start_dt).all()],
+        "schedules": schedules,
         "meetings": [_meeting_to_dict(m) for m in meetings_q.order_by(MeetingRecord.created_at.desc()).all()],
     }
+
+
+def _normalize_remind_times(remind_times: list | None) -> list | None:
+    """remind_times 정규화: 빈 배열은 None으로, sent 플래그 초기화."""
+    if not remind_times:
+        return None
+    return [{"minutes": int(r.get("minutes", 0)), "sent": False} for r in remind_times]
 
 
 def _payload_to_datetimes(payload: SchedulePayload) -> tuple[datetime, datetime]:
@@ -2071,6 +2241,7 @@ def create_schedule(payload: SchedulePayload, db: Session = Depends(get_db)):
     start_dt, end_dt = _payload_to_datetimes(payload)
     if end_dt < start_dt:
         raise HTTPException(status_code=400, detail="End datetime cannot be earlier than start datetime")
+    remind_times = _normalize_remind_times(payload.remind_times)
     row = Schedule(
         title=payload.title,
         description=payload.description,
@@ -2079,8 +2250,14 @@ def create_schedule(payload: SchedulePayload, db: Session = Depends(get_db)):
         all_day=payload.all_day,
         color=payload.color,
         company_id=payload.company_id,
+        category_id=payload.category_id,
         remind_enabled=payload.remind_enabled,
         remind_minutes=payload.remind_minutes,
+        remind_times=remind_times,
+        recur_type=payload.recur_type or None,
+        recur_interval=payload.recur_interval or 1,
+        recur_days_of_week=payload.recur_days_of_week,
+        recur_end_date=payload.recur_end_date,
     )
     db.add(row)
     db.commit()
@@ -2101,6 +2278,7 @@ def update_schedule(schedule_id: int, payload: SchedulePayload, db: Session = De
     start_dt, end_dt = _payload_to_datetimes(payload)
     if end_dt < start_dt:
         raise HTTPException(status_code=400, detail="End datetime cannot be earlier than start datetime")
+    remind_times = _normalize_remind_times(payload.remind_times)
     row.title = payload.title
     row.description = payload.description
     row.start_dt = start_dt
@@ -2108,9 +2286,16 @@ def update_schedule(schedule_id: int, payload: SchedulePayload, db: Session = De
     row.all_day = payload.all_day
     row.color = payload.color
     row.company_id = payload.company_id
+    row.category_id = payload.category_id
     row.remind_enabled = payload.remind_enabled
     row.remind_minutes = payload.remind_minutes
+    row.remind_times = remind_times
+    row.recur_type = payload.recur_type or None
+    row.recur_interval = payload.recur_interval or 1
+    row.recur_days_of_week = payload.recur_days_of_week
+    row.recur_end_date = payload.recur_end_date
     row.remind_sent = False
+    row.briefing_sent = False
     db.commit()
     db.refresh(row)
     return _schedule_to_dict(row)

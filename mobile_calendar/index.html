@@ -106,28 +106,75 @@
         <strong>한국 표준시 (GMT+09:00)</strong>
       </div>
 
-      <label class="toggle-row">
-        <span>텔레그램 알림</span>
-        <input id="remindEnabled" type="checkbox" />
-      </label>
-      <select id="remindMinutes"></select>
+      <!-- 카테고리 -->
+      <select id="scheduleCategory">
+        <option value="">카테고리 없음</option>
+      </select>
+
+      <!-- 색상 (카테고리 없을 때 표시) -->
+      <div id="colorRow">
+        <select id="scheduleColor">
+          <option value="#3B82F6">파랑</option>
+          <option value="#14B8A6">청록</option>
+          <option value="#22C55E">초록</option>
+          <option value="#F59E0B">노랑</option>
+          <option value="#EF4444">빨강</option>
+          <option value="#A855F7">보라</option>
+          <option value="#111827">검정</option>
+        </select>
+      </div>
+
+      <!-- 반복 -->
+      <div class="form-section-label">반복</div>
+      <select id="recurType">
+        <option value="">반복 안함</option>
+        <option value="daily">매일</option>
+        <option value="weekly">매주</option>
+        <option value="monthly">매월</option>
+        <option value="yearly">매년</option>
+      </select>
+      <div id="recurOptions" class="hidden">
+        <div class="form-row">
+          <span>간격</span>
+          <input id="recurInterval" type="number" min="1" max="99" value="1" style="width:60px" />
+          <span id="recurIntervalUnit">주</span>
+        </div>
+        <div id="recurDaysRow" class="hidden">
+          <div class="weekday-row">
+            <label class="weekday-btn"><input type="checkbox" value="0" class="recur-dow" /><span>월</span></label>
+            <label class="weekday-btn"><input type="checkbox" value="1" class="recur-dow" /><span>화</span></label>
+            <label class="weekday-btn"><input type="checkbox" value="2" class="recur-dow" /><span>수</span></label>
+            <label class="weekday-btn"><input type="checkbox" value="3" class="recur-dow" /><span>목</span></label>
+            <label class="weekday-btn"><input type="checkbox" value="4" class="recur-dow" /><span>금</span></label>
+            <label class="weekday-btn"><input type="checkbox" value="5" class="recur-dow" /><span>토</span></label>
+            <label class="weekday-btn"><input type="checkbox" value="6" class="recur-dow" /><span>일</span></label>
+          </div>
+        </div>
+        <div class="form-row">
+          <span>종료일</span>
+          <input id="recurEndDate" type="date" placeholder="없음" />
+        </div>
+      </div>
+
+      <!-- 텔레그램 알림 -->
+      <div class="form-section-label">텔레그램 알림</div>
+      <div class="remind-checks" id="remindChecks">
+        <label class="remind-check-item"><input type="checkbox" class="remind-chk" value="10080" /><span>1주일 전</span></label>
+        <label class="remind-check-item"><input type="checkbox" class="remind-chk" value="1440" /><span>1일 전</span></label>
+        <label class="remind-check-item"><input type="checkbox" class="remind-chk" value="180" /><span>3시간 전</span></label>
+        <label class="remind-check-item"><input type="checkbox" class="remind-chk" value="60" /><span>1시간 전</span></label>
+        <label class="remind-check-item"><input type="checkbox" class="remind-chk" value="30" /><span>30분 전</span></label>
+        <label class="remind-check-item"><input type="checkbox" class="remind-chk" value="10" /><span>10분 전</span></label>
+        <label class="remind-check-item"><input type="checkbox" class="remind-chk" value="0" /><span>시작 시</span></label>
+      </div>
 
       <select id="scheduleCompany"></select>
-      <select id="scheduleColor">
-        <option value="#3B82F6">파랑</option>
-        <option value="#14B8A6">청록</option>
-        <option value="#22C55E">초록</option>
-        <option value="#F59E0B">노랑</option>
-        <option value="#EF4444">빨강</option>
-        <option value="#A855F7">보라</option>
-        <option value="#111827">검정</option>
-      </select>
       <textarea id="scheduleDescription" placeholder="메모"></textarea>
 
       <button id="deleteSchedule" class="danger hidden">삭제</button>
       <p id="editorError" class="error"></p>
     </section>
   </main>
-  <script src="/mobile/static/app.js?v=20260626-weekend1"></script>
+  <script src="/mobile/static/app.js?v=20260630-features1"></script>
 </body>
 </html>

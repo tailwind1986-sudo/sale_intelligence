@@ -648,3 +648,57 @@ textarea {
   .item { grid-template-columns: 62px 4px 1fr auto; }
   .form-row { grid-template-columns: 46px 3fr 2fr; }
 }
+
+/* ── 에디터 추가 UI ── */
+.form-section-label {
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin: 14px 0 6px;
+}
+.remind-checks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 4px;
+}
+.remind-check-item {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  background: var(--hover);
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  padding: 4px 10px;
+  font-size: 0.8rem;
+  cursor: pointer;
+}
+.remind-check-item input[type=checkbox] {
+  width: 14px;
+  height: 14px;
+  accent-color: var(--accent);
+}
+.weekday-row {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+  margin: 4px 0;
+}
+.weekday-btn {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  background: var(--hover);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 4px 8px;
+  font-size: 0.82rem;
+  cursor: pointer;
+}
+.weekday-btn input[type=checkbox] {
+  width: 13px;
+  height: 13px;
+  accent-color: var(--accent);
+}

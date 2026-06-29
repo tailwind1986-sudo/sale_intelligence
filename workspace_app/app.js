@@ -1456,6 +1456,9 @@ function setView(view) {
   $("viewSettings").classList.toggle("hidden", view !== "settings");
   $("viewMonthlyreport").classList.toggle("hidden", view !== "monthlyreport");
   $("viewCalendar").classList.toggle("hidden", view !== "calendar");
+  if (view === "settings") {
+    loadCategories();
+  }
   if (view === "calendar") {
     const frame = document.getElementById("calendarFrame");
     if (!frame.dataset.loaded) {
@@ -1824,3 +1827,72 @@ async function load() {
 
 bindWorkspaceLogin();
 load();
+
+// ── 카테고리 관리 ──────────────────────────────────────────
+let _catEditing = null;
+
+async function loadCategories() {
+  const cats = await api("/api/schedule-categories").catch(() => []);
+  renderCategoryList(cats);
+}
+
+function renderCategoryList(cats) {
+  const el = $("categoryList");
+  if (!cats.length) {
+    el.innerHTML = '<p class="empty" style="font-size:13px">카테고리가 없습니다.</p>';
+    return;
+  }
+  el.innerHTML = cats.map(c => `
+    <div class="cat-row" data-id="${c.id}" style="display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid var(--border)">
+      <span style="display:inline-block;width:14px;height:14px;border-radius:3px;background:${escHtml(c.color)};flex-shrink:0"></span>
+      <span style="flex:1;font-size:14px">${escHtml(c.name)}</span>
+      <button class="cat-edit-btn link-btn" data-id="${c.id}" data-name="${escHtml(c.name)}" data-color="${escHtml(c.color)}" data-order="${c.sort_order}">수정</button>
+      <button class="cat-del-btn link-btn danger" data-id="${c.id}">삭제</button>
+    </div>
+  `).join("");
+
+  el.querySelectorAll(".cat-edit-btn").forEach(btn => {
+    btn.onclick = () => openCategoryEditor({ id: Number(btn.dataset.id), name: btn.dataset.name, color: btn.dataset.color, sort_order: Number(btn.dataset.order) });
+  });
+  el.querySelectorAll(".cat-del-btn").forEach(btn => {
+    btn.onclick = async () => {
+      if (!confirm("이 카테고리를 삭제하면 연결된 일정의 카테고리가 해제됩니다. 삭제할까요?")) return;
+      await api(`/api/schedule-categories/${btn.dataset.id}`, { method: "DELETE" });
+      loadCategories();
+    };
+  });
+}
+
+function openCategoryEditor(cat = null) {
+  _catEditing = cat;
+  $("catName").value = cat?.name || "";
+  $("catColor").value = cat?.color || "#3B82F6";
+  $("catColorHex").textContent = cat?.color || "#3B82F6";
+  $("categoryError").textContent = "";
+  $("categoryEditorWrap").classList.remove("hidden");
+}
+
+$("addCategoryBtn").onclick = () => openCategoryEditor(null);
+$("cancelCategoryBtn").onclick = () => { $("categoryEditorWrap").classList.add("hidden"); _catEditing = null; };
+$("catColor").oninput = e => { $("catColorHex").textContent = e.target.value; };
+
+$("saveCategoryBtn").onclick = async () => {
+  const name = $("catName").value.trim();
+  if (!name) { $("categoryError").textContent = "이름을 입력하세요."; return; }
+  const payload = { name, color: $("catColor").value, sort_order: _catEditing?.sort_order || 0 };
+  try {
+    if (_catEditing) {
+      await api(`/api/schedule-categories/${_catEditing.id}`, { method: "PUT", body: JSON.stringify(payload) });
+    } else {
+      await api("/api/schedule-categories", { method: "POST", body: JSON.stringify(payload) });
+    }
+    $("categoryEditorWrap").classList.add("hidden");
+    _catEditing = null;
+    loadCategories();
+  } catch (e) {
+    $("categoryError").textContent = e.message || "저장 실패";
+  }
+};
+
+function escHtml(s) { return String(s || "").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;"); }
+

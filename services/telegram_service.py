@@ -596,21 +596,50 @@ def send_pre_meeting_briefings(db) -> int:
     window_start = now + timedelta(minutes=50)
     window_end = now + timedelta(minutes=70)
 
-    upcoming = (
+    today = now.date()
+    # 비반복 일정
+    non_recur = (
         db.query(Schedule)
         .options(joinedload(Schedule.company))
         .filter(
             Schedule.all_day == False,
+            Schedule.recur_type.is_(None),
             Schedule.briefing_sent == False,
             Schedule.start_dt >= window_start,
             Schedule.start_dt <= window_end,
         )
         .all()
     )
+    # 반복 일정: 오늘 발생 & 아직 브리핑 미발송
+    recur_candidates = (
+        db.query(Schedule)
+        .options(joinedload(Schedule.company))
+        .filter(
+            Schedule.all_day == False,
+            Schedule.recur_type.isnot(None),
+        )
+        .all()
+    )
+    recur_upcoming = []
+    for s in recur_candidates:
+        occ = _find_recurring_occurrence(s, today)
+        if occ is None:
+            continue
+        if s.recur_last_briefing == occ:
+            continue
+        occ_start = datetime.combine(occ, s.start_dt.time())
+        if window_start <= occ_start <= window_end:
+            s._occ_start = occ_start  # 임시 속성
+            s._occ_date = occ
+            recur_upcoming.append(s)
+    upcoming = non_recur + recur_upcoming
 
     sent = 0
     for s in upcoming:
-        meeting_time = s.start_dt.strftime("%H:%M")
+        is_recur = bool(s.recur_type)
+        occ_start = getattr(s, "_occ_start", s.start_dt)
+        occ_date = getattr(s, "_occ_date", None)
+        meeting_time = occ_start.strftime("%H:%M")
         company = s.company
 
         if company:
@@ -705,7 +734,10 @@ def send_pre_meeting_briefings(db) -> int:
                 text += f"\n{escape(s.description)}"
 
         if send_message(text, chat_id):
-            s.briefing_sent = True
+            if is_recur and occ_date:
+                s.recur_last_briefing = occ_date
+            else:
+                s.briefing_sent = True
             sent += 1
 
     if sent:
@@ -713,9 +745,28 @@ def send_pre_meeting_briefings(db) -> int:
     return sent
 
 
+def _send_reminder_message(s, remind_minutes: int, chat_id: str, occ_dt=None) -> bool:
+    """\uC54C\uB9BC \uBA54\uC2DC\uC9C0 \uBC1C\uC1A1. occ_dt\uB294 \uBC18\uBCF5 \uC77C\uC815\uC758 \uD574\uB2F9 \uBC1C\uC0DD datetime."""
+    from html import escape as esc
+    company_str = f" [{esc(s.company.name)}]" if s.company else ""
+    time_text = _schedule_time_text(s) if occ_dt is None else (
+        "\uC885\uC77C" if s.all_day else occ_dt.strftime("%m/%d %H:%M")
+    )
+    text = (
+        f"<b>[\uC77C\uC815\uC54C\uB9BC]</b>{company_str}\n"
+        f"\uC2DC\uAC04: {esc(time_text)}\n"
+        f"\uC81C\uBAA9: {esc(s.title or '-')}\n"
+        f"\uC54C\uB9BC \uC124\uC815: {_reminder_label(remind_minutes)}"
+    )
+    if s.description:
+        text += f"\n\uBA54\uBAA8: {esc(s.description)}"
+    return send_message(text, chat_id)
+
+
 def check_and_send_reminders(db) -> int:
-    """Send due Telegram reminders and mark them as sent."""
+    """Send due Telegram reminders and mark them as sent. Handles remind_times (multi) and recurring."""
     from database.models import Schedule
+    from datetime import date as date_type
 
     token = _get_token()
     chat_id = _get_chat_id()
@@ -724,35 +775,113 @@ def check_and_send_reminders(db) -> int:
         return 0
 
     now = _local_now_naive()
-    pending = (
+    today = now.date()
+    all_schedules = (
         db.query(Schedule)
-        .filter(
-            Schedule.remind_enabled == True,
-            Schedule.remind_sent == False,
-        )
+        .filter(Schedule.remind_enabled == True)
         .all()
     )
 
     sent = 0
-    for s in pending:
-        remind_minutes = s.remind_minutes if s.remind_minutes is not None else 0
-        remind_at = s.start_dt - timedelta(minutes=remind_minutes)
-        if now >= remind_at:
-            company_str = f" [{escape(s.company.name)}]" if s.company else ""
-            text = (
-                f"<b>[\uC77C\uC815\uC54C\uB9BC]</b>{company_str}\n"
-                f"\uC2DC\uAC04: {escape(_schedule_time_text(s))}\n"
-                f"\uC81C\uBAA9: {escape(s.title or '-')}\n"
-                f"\uC54C\uB9BC \uC124\uC815: {_reminder_label(s.remind_minutes)}"
-            )
-            if s.description:
-                text += f"\n\uBA54\uBAA8: {escape(s.description)}"
-            if send_message(text, chat_id):
+    dirty = False
+
+    for s in all_schedules:
+        is_recurring = bool(s.recur_type)
+
+        if is_recurring:
+            # \uBC18\uBCF5 \uC77C\uC815: \uC624\uB298 \uBC1C\uC0DD\uD558\uB294 \uC778\uC2A4\uD134\uC2A4 \uCC3E\uAE30
+            occ_date = _find_recurring_occurrence(s, today)
+            if occ_date is None:
+                continue
+            if s.recur_last_reminded == occ_date:
+                continue  # \uC774\uBBF8 \uC774 \uBC1C\uC0DD\uC77C\uC5D0 \uC54C\uB9BC \uBCF4\uB0C4
+            occ_start = datetime.combine(occ_date, s.start_dt.time())
+            remind_minutes = s.remind_minutes if s.remind_minutes is not None else 0
+            remind_at = occ_start - timedelta(minutes=remind_minutes)
+            if now >= remind_at:
+                if _send_reminder_message(s, remind_minutes, chat_id, occ_dt=occ_start):
+                    s.recur_last_reminded = occ_date
+                    sent += 1
+                    dirty = True
+
+        elif s.remind_times:
+            # \uBCF5\uC218 \uC54C\uB9BC (\uBE44\uBC18\uBCF5)
+            all_sent = True
+            changed = False
+            for entry in s.remind_times:
+                if entry.get("sent"):
+                    continue
+                all_sent = False
+                m = int(entry.get("minutes", 0))
+                remind_at = s.start_dt - timedelta(minutes=m)
+                if now >= remind_at:
+                    if _send_reminder_message(s, m, chat_id):
+                        entry["sent"] = True
+                        changed = True
+                        sent += 1
+            if changed:
+                from sqlalchemy.orm.attributes import flag_modified
+                flag_modified(s, "remind_times")
+                dirty = True
+            if all_sent and not s.remind_sent:
                 s.remind_sent = True
-                sent += 1
-    if sent:
+                dirty = True
+
+        else:
+            # \uB2E8\uC77C \uC54C\uB9BC (\uB808\uAC70\uC2DC)
+            if s.remind_sent:
+                continue
+            remind_minutes = s.remind_minutes if s.remind_minutes is not None else 0
+            remind_at = s.start_dt - timedelta(minutes=remind_minutes)
+            if now >= remind_at:
+                if _send_reminder_message(s, remind_minutes, chat_id):
+                    s.remind_sent = True
+                    sent += 1
+                    dirty = True
+
+    if dirty:
         db.commit()
     return sent
+
+
+def _find_recurring_occurrence(s, today) -> "date | None":
+    """\uC624\uB298 \uB0A0\uC9DC\uC5D0 \uBC18\uBCF5 \uC77C\uC815\uC758 \uBC1C\uC0DD\uC774 \uC788\uC73C\uBA74 \uD574\uB2F9 date\uB97C \uBC18\uD658, \uC5C6\uC73C\uBA74 None."""
+    from datetime import date as date_type
+    master_start = s.start_dt.date()
+    if today < master_start:
+        return None
+    if s.recur_end_date and today > s.recur_end_date:
+        return None
+    interval = max(1, s.recur_interval or 1)
+
+    if s.recur_type == "daily":
+        diff = (today - master_start).days
+        if diff % interval == 0:
+            return today
+
+    elif s.recur_type == "weekly":
+        days_of_week = s.recur_days_of_week or [master_start.weekday()]
+        if today.weekday() not in days_of_week:
+            return None
+        week_diff = (today - master_start).days // 7
+        if week_diff % interval == 0:
+            return today
+
+    elif s.recur_type == "monthly":
+        if today.day != master_start.day:
+            return None
+        month_diff = (today.year - master_start.year) * 12 + (today.month - master_start.month)
+        if month_diff >= 0 and month_diff % interval == 0:
+            return today
+
+    elif s.recur_type == "yearly":
+        if today.month != master_start.month or today.day != master_start.day:
+            return None
+        year_diff = today.year - master_start.year
+        if year_diff >= 0 and year_diff % interval == 0:
+            return today
+
+    return None
 
 
 def build_monthly_report_data(db, year_month: str | None = None) -> dict:

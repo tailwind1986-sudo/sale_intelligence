@@ -1,5 +1,5 @@
 const REMIND_OPTIONS = [
-  ["0", "\uC2DC\uC791 \uC2DC\uAC04"],
+  ["0", "\uC2DC\uC791 \uC2DC"],
   ["10", "10\uBD84 \uC804"],
   ["30", "30\uBD84 \uC804"],
   ["60", "1\uC2DC\uAC04 \uC804"],
@@ -7,6 +7,9 @@ const REMIND_OPTIONS = [
   ["1440", "\uD558\uB8E8 \uC804"],
   ["10080", "\uC77C\uC8FC\uC77C \uC804"],
 ];
+
+// \uCE74\uD14C\uACE0\uB9AC \uCE90\uC2DC
+let _categories = [];
 
 const state = {
   token: localStorage.getItem("sales_mobile_token") || "",
@@ -120,9 +123,12 @@ async function login(event) {
 }
 
 async function bootstrap() {
-  state.companies = await api("/api/companies");
+  [state.companies, _categories] = await Promise.all([
+    api("/api/companies"),
+    api("/api/schedule-categories").catch(() => []),
+  ]);
   renderCompanyFilters();
-  renderReminderOptions();
+  renderCategoryOptions();
   const draft = consumeScheduleDraft();
   if (draft?.start_date) {
     state.selectedDate = draft.start_date;
@@ -168,8 +174,17 @@ function renderCompanyFilters() {
   $("scheduleCompany").innerHTML = `<option value="">캘린더/고객사 없음</option>${companyOptions}`;
 }
 
-function renderReminderOptions() {
-  $("remindMinutes").innerHTML = REMIND_OPTIONS.map(([value, label]) => `<option value="${value}">${label}</option>`).join("");
+function renderCategoryOptions() {
+  const opts = _categories.map(c =>
+    `<option value="${c.id}" data-color="${c.color}">${escapeHtml(c.name)}</option>`
+  ).join("");
+  $("scheduleCategory").innerHTML = `<option value="">카테고리 없음</option>${opts}`;
+  updateColorRowVisibility();
+}
+
+function updateColorRowVisibility() {
+  const catVal = $("scheduleCategory").value;
+  $("colorRow").style.display = catVal ? "none" : "";
 }
 
 async function loadMonth() {
@@ -534,7 +549,14 @@ function openScheduleDetail(s) {
 }
 
 function openEditor(schedule = null, draftMode = false) {
-  state.editing = draftMode ? null : schedule;
+  // 반복 일정 인스턴스를 클릭하면 마스터를 편집
+  const isInstance = schedule && typeof schedule.id === "string" && schedule.id.startsWith("r");
+  state.editing = (draftMode || isInstance) ? null : schedule;
+  if (isInstance) {
+    // 마스터 ID로 실제 스케줄 로드는 복잡하므로, 일단 마스터 필드를 사용
+    schedule = { ...schedule, id: schedule.recur_master_id };
+    state.editing = schedule;
+  }
   state.endDateTouched = Boolean(schedule);
   state.endTimeTouched = Boolean(schedule);
   $("scheduleTitle").value = schedule?.title || "";
@@ -546,8 +568,31 @@ function openEditor(schedule = null, draftMode = false) {
   $("endTime").value = schedule?.end_time || "10:00";
   $("scheduleCompany").value = schedule?.company_id || "";
   $("scheduleColor").value = schedule?.color || "#3B82F6";
-  $("remindEnabled").checked = schedule ? Boolean(schedule.remind_enabled) : true;
-  $("remindMinutes").value = String(schedule?.remind_minutes || 1440);
+  $("scheduleCategory").value = schedule?.category_id || "";
+  updateColorRowVisibility();
+
+  // 복수 알림 체크박스 초기화
+  const chks = document.querySelectorAll(".remind-chk");
+  if (schedule?.remind_times && schedule.remind_times.length > 0) {
+    const sentMinutes = new Set(schedule.remind_times.map(r => String(r.minutes)));
+    chks.forEach(c => { c.checked = sentMinutes.has(c.value); });
+  } else {
+    chks.forEach(c => { c.checked = false; });
+    // 레거시: remind_enabled + remind_minutes → 해당 체크박스 활성화
+    if (schedule ? Boolean(schedule.remind_enabled) : true) {
+      const mins = String(schedule?.remind_minutes ?? 1440);
+      const match = document.querySelector(`.remind-chk[value="${mins}"]`);
+      if (match) match.checked = true;
+      else if (!schedule) document.querySelector('.remind-chk[value="1440"]').checked = true;
+    }
+  }
+
+  // 반복 설정
+  $("recurType").value = schedule?.recur_type || "";
+  $("recurInterval").value = schedule?.recur_interval || 1;
+  $("recurEndDate").value = schedule?.recur_end_date || "";
+  updateRecurUI(schedule?.recur_type || "", schedule?.recur_days_of_week || null, schedule?.start_date);
+
   $("deleteSchedule").classList.toggle("hidden", !schedule || draftMode);
   if (!schedule) {
     syncEndDateToStart(true);
@@ -556,6 +601,22 @@ function openEditor(schedule = null, draftMode = false) {
   updateDateHints();
   toggleTimeFields();
   show("editor");
+}
+
+function updateRecurUI(recurType, daysOfWeek, startDate) {
+  const hasRecur = Boolean(recurType);
+  $("recurOptions").classList.toggle("hidden", !hasRecur);
+  const unitMap = { daily: "일", weekly: "주", monthly: "개월", yearly: "년" };
+  $("recurIntervalUnit").textContent = unitMap[recurType] || "주";
+  $("recurDaysRow").classList.toggle("hidden", recurType !== "weekly");
+  if (recurType === "weekly") {
+    const activeSet = daysOfWeek
+      ? new Set(daysOfWeek.map(Number))
+      : startDate ? new Set([new Date(startDate + "T00:00:00").getDay() === 0 ? 6 : new Date(startDate + "T00:00:00").getDay() - 1]) : new Set([0]);
+    document.querySelectorAll(".recur-dow").forEach(c => {
+      c.checked = activeSet.has(Number(c.value));
+    });
+  }
 }
 
 function toggleTimeFields() {
@@ -636,6 +697,28 @@ async function quickAddSchedule(event) {
 
 async function saveSchedule() {
   $("editorError").textContent = "";
+
+  // 복수 알림 수집
+  const checkedReminders = [...document.querySelectorAll(".remind-chk:checked")];
+  const remind_times = checkedReminders.length > 0
+    ? checkedReminders.map(c => ({ minutes: Number(c.value) }))
+    : null;
+  const remind_enabled = checkedReminders.length > 0;
+  const remind_minutes = checkedReminders.length > 0 ? Number(checkedReminders[0].value) : 1440;
+
+  // 반복 설정 수집
+  const recur_type = $("recurType").value || null;
+  const recur_interval = recur_type ? (Number($("recurInterval").value) || 1) : 1;
+  const recur_days_of_week = recur_type === "weekly"
+    ? [...document.querySelectorAll(".recur-dow:checked")].map(c => Number(c.value))
+    : null;
+  const recur_end_date = $("recurEndDate").value || null;
+
+  // 카테고리 → 색상 자동 적용
+  const catId = $("scheduleCategory").value ? Number($("scheduleCategory").value) : null;
+  const cat = _categories.find(c => c.id === catId);
+  const color = cat ? cat.color : $("scheduleColor").value;
+
   const payload = {
     title: $("scheduleTitle").value.trim(),
     description: $("scheduleDescription").value.trim() || null,
@@ -644,10 +727,16 @@ async function saveSchedule() {
     start_time: $("allDay").checked ? null : $("startTime").value,
     end_time: $("allDay").checked ? null : $("endTime").value,
     all_day: $("allDay").checked,
-    color: $("scheduleColor").value,
+    color,
     company_id: $("scheduleCompany").value ? Number($("scheduleCompany").value) : null,
-    remind_enabled: $("remindEnabled").checked,
-    remind_minutes: Number($("remindMinutes").value || 1440),
+    category_id: catId,
+    remind_enabled,
+    remind_minutes,
+    remind_times,
+    recur_type,
+    recur_interval,
+    recur_days_of_week,
+    recur_end_date,
   };
   if (!payload.title) {
     $("editorError").textContent = "제목을 입력해주세요.";
@@ -713,6 +802,8 @@ $("companyFilter").onchange = async e => { state.companyId = e.target.value; awa
 $("addBtn").onclick = () => openEditor();
 $("quickAddForm").addEventListener("submit", quickAddSchedule);
 $("allDay").onchange = () => { toggleTimeFields(); syncEndTimeToStart(true); };
+$("scheduleCategory").onchange = updateColorRowVisibility;
+$("recurType").onchange = e => updateRecurUI(e.target.value, null, $("startDate").value);
 $("startDate").onchange = () => { syncEndDateToStart(true); syncEndTimeToStart(true); };
 $("endDate").onchange = () => { state.endDateTouched = true; updateDateHints(); };
 $("startTime").onchange = () => syncEndTimeToStart(true);
