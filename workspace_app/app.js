@@ -628,29 +628,25 @@ function renderSalesSignals(c) {
     ? `<span class="hot-score-badge" title="최근 90일 영업 신호 가중 합산 (HIGH=3점, MED=1점)">🔥 HOT ${hotScore}점</span>`
     : "";
 
-  return `
-    <div class="detail-section">
-      <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">
-        <h3 style="margin:0">영업 신호</h3>
-        ${hotBadge}
-      </div>
-      <div class="signal-list">
-        ${signals.map(s => `
-          <div class="signal-row ${strengthCls[s.strength] || "sig-med"}">
-            <span class="signal-icon">${signalEmoji[s.signal_type] || "📌"}</span>
-            <div class="signal-body">
-              <strong>${escapeHtml(s.signal_type)}</strong>
-              <span>${escapeHtml(s.content || "")}</span>
-            </div>
-            <div class="signal-meta">
-              <span class="signal-strength ${strengthCls[s.strength] || ""}">${s.strength}</span>
-              <time>${escapeHtml(s.detected_at || "")}</time>
-            </div>
+  const bodyHtml = `
+    <div class="signal-list">
+      ${signals.map(s => `
+        <div class="signal-row ${strengthCls[s.strength] || "sig-med"}">
+          <span class="signal-icon">${signalEmoji[s.signal_type] || "📌"}</span>
+          <div class="signal-body">
+            <strong>${escapeHtml(s.signal_type)}</strong>
+            <span>${escapeHtml(s.content || "")}</span>
           </div>
-        `).join("")}
-      </div>
-      <p style="font-size:11px;color:var(--muted);margin-top:6px">※ HIGH=3점·MED=1점 가중 합산 / 최근 90일 기준</p>
-    </div>`;
+          <div class="signal-meta">
+            <span class="signal-strength ${strengthCls[s.strength] || ""}">${s.strength}</span>
+            <time>${escapeHtml(s.detected_at || "")}</time>
+          </div>
+        </div>
+      `).join("")}
+    </div>
+    <p style="font-size:11px;color:var(--muted);margin-top:6px">※ HIGH=3점·MED=1점 가중 합산 / 최근 90일 기준</p>`;
+
+  return makeSection(`영업 신호 ${hotBadge}`, bodyHtml, { open: true });
 }
 
 function renderIssueSummary(c) {
@@ -666,47 +662,41 @@ function renderIssueSummary(c) {
     "관계": "#f0fdf4:#166534",
     "기타": "#f3f4f6:#4b5563",
   };
-  return `
-    <div class="detail-section">
-      <h3>반복 이슈</h3>
-      <div class="issue-tag-row">
-        ${issues.map(({ tag, count }) => {
-          const [bg, color] = (tagColor[tag] || tagColor["기타"]).split(":");
-          return `<span class="issue-tag-badge" style="background:${bg};color:${color}">${escapeHtml(tag)} <strong>${count}</strong></span>`;
-        }).join("")}
-      </div>
-    </div>`;
+  const issueBody = `<div class="issue-tag-row">
+    ${issues.map(({ tag, count }) => {
+      const [bg, color] = (tagColor[tag] || tagColor["기타"]).split(":");
+      return `<span class="issue-tag-badge" style="background:${bg};color:${color}">${escapeHtml(tag)} <strong>${count}</strong></span>`;
+    }).join("")}
+  </div>`;
+  return makeSection("반복 이슈", issueBody, { open: false });
 }
 
 function renderCompanyHistory(c) {
   const history = c.company_history || [];
   if (!history.length) return "";
   const moodDot = m => m > 0 ? "🟢" : m < 0 ? "🔴" : "⚪";
-  return `
-    <div class="detail-section">
-      <h3>관계 추이</h3>
-      <div class="history-table">
-        <div class="history-head">
-          <span>월</span><span>딜단계</span><span>신뢰</span><span>리스크</span><span>분위기</span>
-        </div>
-        ${history.map(h => {
-          const trust = h.trust_score_avg != null ? Math.round(h.trust_score_avg) : "-";
-          const risk  = h.risk_score_avg  != null ? Math.round(h.risk_score_avg)  : "-";
-          const trustBar = h.trust_score_avg != null
-            ? `<div class="hist-bar-wrap"><div class="hist-bar trust-bar" style="width:${h.trust_score_avg}%"></div></div>`
-            : "";
-          const moodNet = (h.mood_positive || 0) - (h.mood_negative || 0);
-          return `
-          <div class="history-row">
-            <span class="hist-ym">${h.year_month}</span>
-            <span class="hist-stage">${escapeHtml(h.sales_stage || "-")}</span>
-            <span class="hist-trust">${trustBar}<em>${trust}</em></span>
-            <span class="hist-risk" style="color:${risk > 60 ? "var(--danger)" : risk > 30 ? "var(--warning)" : "var(--accent)"}">${risk}</span>
-            <span>${moodDot(moodNet)} ${h.meeting_count}회</span>
-          </div>`;
-        }).join("")}
-      </div>
-    </div>`;
+  const histBody = `<div class="history-table">
+    <div class="history-head">
+      <span>월</span><span>딜단계</span><span>신뢰</span><span>리스크</span><span>분위기</span>
+    </div>
+    ${history.map(h => {
+      const trust = h.trust_score_avg != null ? Math.round(h.trust_score_avg) : "-";
+      const risk  = h.risk_score_avg  != null ? Math.round(h.risk_score_avg)  : "-";
+      const trustBar = h.trust_score_avg != null
+        ? `<div class="hist-bar-wrap"><div class="hist-bar trust-bar" style="width:${h.trust_score_avg}%"></div></div>`
+        : "";
+      const moodNet = (h.mood_positive || 0) - (h.mood_negative || 0);
+      return `
+      <div class="history-row">
+        <span class="hist-ym">${h.year_month}</span>
+        <span class="hist-stage">${escapeHtml(h.sales_stage || "-")}</span>
+        <span class="hist-trust">${trustBar}<em>${trust}</em></span>
+        <span class="hist-risk" style="color:${risk > 60 ? "var(--danger)" : risk > 30 ? "var(--warning)" : "var(--accent)"}">${risk}</span>
+        <span>${moodDot(moodNet)} ${h.meeting_count}회</span>
+      </div>`;
+    }).join("")}
+  </div>`;
+  return makeSection("관계 추이", histBody, { open: false });
 }
 
 function _insightMonthOptions(existingYMs) {
@@ -732,12 +722,13 @@ function renderMonthlyInsights(c) {
   const monthSelect = `<select id="insightYmSelect_${companyId}" style="font-size:12px;padding:3px 6px;border:1px solid var(--border);border-radius:6px;background:var(--card-bg);color:var(--text)">${_insightMonthOptions(existingYMs)}</select>`;
   const genBtn = `<button class="small-primary insight-gen-btn" id="insightGenBtn_${companyId}" data-insight-gen="${companyId}" data-insight-ym-select="insightYmSelect_${companyId}">AI 분석</button>`;
 
+  const insightExtra = `<div style="display:flex;gap:6px;align-items:center">${monthSelect}${genBtn}</div>`;
+
   if (!insights.length) {
-    return `
-    <div class="detail-section">
-      <div class="panel-head"><h3>월간 인사이트</h3><div style="display:flex;gap:6px;align-items:center">${monthSelect}${genBtn}</div></div>
-      <p class="empty">인사이트가 없습니다. 월을 선택하고 AI 분석 버튼으로 생성하세요.</p>
-    </div>`;
+    return makeSection("월간 인사이트",
+      `<p class="empty">인사이트가 없습니다. 월을 선택하고 AI 분석 버튼으로 생성하세요.</p>`,
+      { open: false, extra: insightExtra }
+    );
   }
 
   const cards = insights.map(ins => {
@@ -781,10 +772,24 @@ function renderMonthlyInsights(c) {
     </div>`;
   }).join("");
 
+  return makeSection("월간 인사이트", cards, { open: false, extra: insightExtra });
+}
+
+// 아코디언 섹션 래퍼
+// title: 헤더 텍스트, bodyHtml: 내용, opts.extra: 헤더 우측 버튼, opts.open: 기본 펼침 여부
+function makeSection(title, bodyHtml, { extra = "", open = false } = {}) {
+  const isMobile = window.innerWidth < 768;
+  const collapsed = isMobile && !open ? " collapsed" : "";
   return `
-  <div class="detail-section monthly-insight-panel">
-    <div class="panel-head"><h3>월간 인사이트</h3><div style="display:flex;gap:6px;align-items:center">${monthSelect}${genBtn}</div></div>
-    ${cards}
+  <div class="detail-section${collapsed}">
+    <div class="section-header">
+      <div class="section-toggle" data-section-toggle>
+        <span class="section-toggle-title">${title}</span>
+        <span class="section-chevron">▼</span>
+      </div>
+      ${extra ? `<div class="section-header-extra">${extra}</div>` : ""}
+    </div>
+    <div class="section-body">${bodyHtml}</div>
   </div>`;
 }
 
@@ -801,20 +806,18 @@ function renderCompanyDetail(c) {
       </div>
     </div>
     <p class="meta">${escapeHtml(c.memo || "메모 없음")}</p>
-    <div class="detail-section">
-      <div class="panel-head"><h3>담당자</h3><button data-contact-new="${c.id}" class="small-primary">추가</button></div>
-      <div id="contactFormSlot"></div>
-      ${(c.contacts || []).map(row => `
+    ${makeSection("담당자",
+      `<div id="contactFormSlot"></div>` +
+      ((c.contacts || []).map(row => `
         <div class="mini-row">
           <div><strong>${row.is_primary ? "★ " : ""}${escapeHtml(row.name)}</strong><span>${escapeHtml([row.position, row.phone, row.email].filter(Boolean).join(" · "))}</span></div>
           <div class="row-actions"><button data-contact-edit="${row.id}">수정</button><button class="danger-btn" data-contact-delete="${row.id}">삭제</button></div>
-        </div>
-      `).join("") || `<p class="empty">담당자가 없습니다.</p>`}
-    </div>
-    <div class="detail-section">
-      <div class="panel-head"><h3>고객 정보</h3><button data-info-new="${c.id}" class="small-primary">추가</button></div>
-      <div id="infoFormSlot"></div>
-      ${(c.customer_infos || []).map(row => `
+        </div>`).join("") || `<p class="empty">담당자가 없습니다.</p>`),
+      { open: true, extra: `<button data-contact-new="${c.id}" class="small-primary">추가</button>` }
+    )}
+    ${makeSection("고객 정보",
+      `<div id="infoFormSlot"></div>` +
+      ((c.customer_infos || []).map(row => `
         <div class="mini-row">
           <div>
             <strong>[${escapeHtml(row.category || "기타")}] ${escapeHtml(row.key)}</strong>
@@ -822,13 +825,13 @@ function renderCompanyDetail(c) {
             <span>${escapeHtml(row.value)} ${row.contact_name ? " · " + escapeHtml(row.contact_name) : ""}</span>
           </div>
           <div class="row-actions"><button data-info-edit="${row.id}">수정</button><button class="danger-btn" data-info-delete="${row.id}">삭제</button></div>
-        </div>
-      `).join("") || `<p class="empty">고객 정보가 없습니다.</p>`}
-    </div>
-    <div class="detail-section">
-      <h3>최근 미팅</h3>
-      ${(c.recent_meetings || []).map(row => `<div class="mini-row"><div><strong>${escapeHtml(row.date)}</strong><span>${escapeHtml(row.summary || "-")}</span></div></div>`).join("") || `<p class="empty">최근 미팅이 없습니다.</p>`}
-    </div>
+        </div>`).join("") || `<p class="empty">고객 정보가 없습니다.</p>`),
+      { open: false, extra: `<button data-info-new="${c.id}" class="small-primary">추가</button>` }
+    )}
+    ${makeSection("최근 미팅",
+      (c.recent_meetings || []).map(row => `<div class="mini-row"><div><strong>${escapeHtml(row.date)}</strong><span>${escapeHtml(row.summary || "-")}</span></div></div>`).join("") || `<p class="empty">최근 미팅이 없습니다.</p>`,
+      { open: true }
+    )}
     ${renderCompanyHistory(c)}
     ${renderSalesSignals(c)}
     ${renderIssueSummary(c)}
@@ -1443,6 +1446,13 @@ function bindEvents() {
       await api(`/api/schedule-candidates/${row.meeting_id}/${row.index}/ignore`, { method: "POST" });
       await loadCandidates();
     }
+    // 아코디언 토글 — 모바일에서만 동작 (PC는 CSS로 항상 펼침)
+    const toggleEl = target.closest("[data-section-toggle]");
+    if (toggleEl && window.innerWidth < 768) {
+      toggleEl.closest(".detail-section").classList.toggle("collapsed");
+      return;
+    }
+
     const meetingOpen = target.closest("[data-meeting-open]")?.dataset.meetingOpen;
     if (meetingOpen) await openMeeting(meetingOpen);
     const relationSave = target.dataset.relationSave;
