@@ -382,11 +382,20 @@ def hot_companies(limit: int = 10, db: Session = Depends(get_db)):
 @app.post("/api/workspace/monthly-insight/{company_id}", dependencies=[Depends(_require_auth)])
 def generate_company_monthly_insight(company_id: int, db: Session = Depends(get_db), year_month: str | None = None):
     """특정 고객사의 월간 인사이트를 GPT로 생성/갱신."""
+    import traceback
+    try:
+        return _do_generate_monthly_insight(company_id, db, year_month)
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"[서버오류] {type(e).__name__}: {e}")
+
+
+def _do_generate_monthly_insight(company_id: int, db, year_month):
     # monthly_insights 테이블이 없는 구버전 서버 DB 대비 — 필요 시 즉시 생성
     from database.db import create_database
     create_database()
 
-    from datetime import date as _date
     ym = year_month or _now_kst().strftime("%Y-%m")
 
     company = db.get(Company, company_id)
