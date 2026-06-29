@@ -329,6 +329,11 @@ def generate_monthly_insight(
 
 위 정보를 바탕으로 {year_month} 월간 인사이트를 JSON으로 출력하세요."""
 
+    api_key = _get_api_key()
+    if not api_key:
+        raise ValueError("OPENAI_API_KEY가 설정되지 않았습니다.")
+    client = OpenAI(api_key=api_key)
+
     response = client.chat.completions.create(
         model="gpt-4.1",
         messages=[
