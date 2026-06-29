@@ -648,6 +648,7 @@ def _update_schedule_candidate_state(meeting: MeetingRecord, index: int, **updat
 
 ANALYSIS_JSON_FIELDS = [
     "meeting_overview",
+    "meeting_mood",
     "topic_discussions",
     "key_discussions",
     "decisions",
@@ -747,6 +748,7 @@ def _analysis_from_result(record: MeetingRecord, result: dict) -> MeetingAnalysi
         sales_opportunities=result.get("sales_opportunities", []),
         relationship_notes=result.get("relationship_notes", []),
         schedule_candidates=result.get("schedule_candidates", []),
+        meeting_mood=result.get("meeting_mood"),
         trust_score=result.get("trust_score", 50),
         risk_score=result.get("risk_score", 50),
     )
@@ -800,6 +802,7 @@ def _update_meeting_analysis(analysis: MeetingAnalysis, result: dict, *, schedul
     analysis.sales_opportunities = result.get("sales_opportunities", [])
     analysis.relationship_notes = result.get("relationship_notes", [])
     analysis.schedule_candidates = result.get("schedule_candidates", [])
+    analysis.meeting_mood = result.get("meeting_mood")
     analysis.trust_score = result.get("trust_score", 50)
     analysis.risk_score = result.get("risk_score", 50)
     for field in ANALYSIS_JSON_FIELDS:
@@ -1515,6 +1518,7 @@ def list_meeting_results(q: str = "", company_id: int | None = None, db: Session
             "attendees": m.attendees or "",
             "summary": _brief_text(m.analysis.one_line_summary if m.analysis else m.memo, 120),
             "has_analysis": bool(m.analysis),
+            "mood_overall": (m.analysis.meeting_mood or {}).get("overall") if m.analysis and isinstance(m.analysis.meeting_mood, dict) else None,
             "actions": len(m.action_items),
             "promises": len(m.promises),
         }
@@ -1632,6 +1636,8 @@ def meeting_detail(meeting_id: int, db: Session = Depends(get_db)):
             "risks_and_checks": _json_list(a.risks_and_checks) or _json_list(a.risk_factors),
             "relationship_notes": _json_list(a.relationship_notes),
             "schedule_candidates": _json_list(a.schedule_candidates),
+            "competitor_mentions": _json_list(a.competitor_mentions),
+            "meeting_mood": _json_dict(a.meeting_mood) if isinstance(a.meeting_mood, dict) else {},
             "trust_score": a.trust_score or 0,
             "risk_score": a.risk_score or 0,
         },

@@ -138,6 +138,7 @@ class MeetingAnalysis(Base):
     sales_opportunities = Column(JSON)
     relationship_notes = Column(JSON)
     schedule_candidates = Column(JSON)
+    meeting_mood = Column(JSON)
     trust_score = Column(Integer)
     risk_score = Column(Integer)
     created_at = Column(DateTime, default=datetime.now)

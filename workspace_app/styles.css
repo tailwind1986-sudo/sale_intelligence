@@ -532,6 +532,100 @@ textarea { min-height: 72px; resize: vertical; }
 .full-report-body li { margin-bottom: 3px; }
 .full-report-body p { margin: 6px 0; }
 
+/* ── 회의 분위기 & 경쟁사 ── */
+.mood-row {
+  margin-top: 12px;
+  padding: 12px 14px;
+  border-radius: 10px;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.mood-block {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.mood-label {
+  font-size: 13px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.mood-bar-wrap {
+  flex: 1;
+  min-width: 80px;
+  max-width: 160px;
+  height: 6px;
+  border-radius: 99px;
+  background: #e5e7eb;
+  overflow: hidden;
+}
+
+.mood-bar {
+  height: 100%;
+  border-radius: 99px;
+  transition: width 0.4s ease;
+}
+
+.mood-score {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.mood-signals {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+.mood-signal {
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: 99px;
+  background: var(--accent-light);
+  color: var(--nav-active-text);
+  font-weight: 600;
+}
+
+.mood-concern {
+  font-size: 12px;
+  color: var(--warning);
+  margin: 0;
+}
+
+.competitor-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.competitor-label {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+}
+
+.competitor-tag {
+  font-size: 12px;
+  padding: 2px 9px;
+  border-radius: 99px;
+  background: #fee2e2;
+  color: #b91c1c;
+  font-weight: 600;
+}
+
 .mini-row:first-of-type { border-top: 0; }
 
 .mini-row strong,

@@ -733,13 +733,17 @@ function renderMeetings() {
     $("meetingDetail").innerHTML = "";
     return;
   }
-  $("meetingList").innerHTML = state.meetings.map(row => `
+  const moodDot = { "긍정적": "🟢", "중립": "🟡", "부정적": "🔴", "혼재": "🟠" };
+  $("meetingList").innerHTML = state.meetings.map(row => {
+    const dot = row.mood_overall ? (moodDot[row.mood_overall] || "") : "";
+    const statusLabel = row.has_analysis ? (dot ? `${dot} 분석완료` : "분석완료") : "미분석";
+    return `
     <button class="company-card" data-meeting-open="${row.id}">
       <strong>${escapeHtml(row.company)}</strong>
-      <span>${escapeHtml([row.meeting_date, row.meeting_type, row.has_analysis ? "분석완료" : "미분석"].filter(Boolean).join(" · "))}</span>
+      <span>${escapeHtml([row.meeting_date, row.meeting_type, statusLabel].filter(Boolean).join(" · "))}</span>
       <small>${escapeHtml(row.summary || "요약 없음")}</small>
-    </button>
-  `).join("");
+    </button>`;
+  }).join("");
 }
 
 async function openMeeting(meetingId) {
@@ -761,6 +765,51 @@ function renderTopic(item) {
     return `${item.topic || "주제"}: ${item.discussion || item.current_status || item.needs_review || "-"}`;
   }
   return String(item);
+}
+
+function renderMoodAndCompetitors(a) {
+  const mood = a.meeting_mood || {};
+  const competitors = a.competitor_mentions || [];
+  if (!mood.overall && !competitors.length) return "";
+
+  const moodConfig = {
+    "긍정적": { emoji: "🟢", cls: "mood-pos" },
+    "중립":   { emoji: "🟡", cls: "mood-neu" },
+    "부정적": { emoji: "🔴", cls: "mood-neg" },
+    "혼재":   { emoji: "🟠", cls: "mood-mix" },
+  };
+  const cfg = moodConfig[mood.overall] || { emoji: "⚪", cls: "mood-neu" };
+  const score = mood.score ?? null;
+
+  let html = `<div class="mood-row">`;
+
+  if (mood.overall) {
+    html += `<div class="mood-block">
+      <span class="mood-label">${cfg.emoji} ${escapeHtml(mood.overall)}</span>`;
+    if (score !== null) {
+      const barColor = score >= 70 ? "#10a37f" : score >= 40 ? "#d97706" : "#dc2626";
+      html += `<div class="mood-bar-wrap"><div class="mood-bar" style="width:${score}%;background:${barColor}"></div></div>
+      <span class="mood-score">${score}</span>`;
+    }
+    html += `</div>`;
+
+    const signals = mood.signals || [];
+    if (signals.length) {
+      html += `<div class="mood-signals">${signals.map(s => `<span class="mood-signal">✓ ${escapeHtml(s)}</span>`).join("")}</div>`;
+    }
+    if (mood.concern) {
+      html += `<p class="mood-concern">⚠️ ${escapeHtml(mood.concern)}</p>`;
+    }
+  }
+
+  if (competitors.length) {
+    html += `<div class="competitor-row"><span class="competitor-label">경쟁사</span>`;
+    html += competitors.map(c => `<span class="competitor-tag">${escapeHtml(String(c))}</span>`).join("");
+    html += `</div>`;
+  }
+
+  html += `</div>`;
+  return html;
 }
 
 function renderMeetingDetail(m) {
@@ -792,6 +841,7 @@ function renderMeetingDetail(m) {
     </div>
     <p class="title">${escapeHtml(a.one_line_summary || "한 줄 결론 없음")}</p>
     ${a.analyzed_at ? `<p class="meta" style="margin-top:2px">AI 분석: ${escapeHtml(a.analyzed_at)}</p>` : ""}
+    ${renderMoodAndCompetitors(a)}
     <div class="detail-section"><h3>전체 요약</h3><p>${escapeHtml(a.detailed_summary || "-")}</p></div>
     ${listBlock("핵심 논의", a.topic_discussions || [], renderTopic)}
     ${listBlock("결정사항", a.decisions || [])}
