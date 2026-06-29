@@ -521,12 +521,11 @@ function renderCompanies() {
     return;
   }
   $("companyList").innerHTML = state.companyRows.map(row => `
-    <button class="company-card" data-company-open="${row.id}">
+    <button class="company-card${state.openCompanyId === String(row.id) ? " company-card-active" : ""}" data-company-open="${row.id}">
       <strong>${escapeHtml(row.name)}</strong>
       <span>${escapeHtml([row.business_type || "-", row.sales_stage || "-", row.risk_level || "-"].join(" · "))}</span>
       <small>미팅 ${row.meeting_count} · 액션 ${row.action_count} · 약속 ${row.promise_count}</small>
     </button>
-    <div class="company-inline-detail hidden" id="inline-detail-${row.id}"></div>
   `).join("");
 }
 
@@ -606,51 +605,28 @@ function infoPayloadFromForm(form, companyId) {
 
 async function openCompany(companyId) {
   const id = String(companyId);
-  const isMobile = window.innerWidth < 768;
-
-  if (isMobile) {
-    // 이미 열린 카드 → 닫기 (API 호출 없이)
-    const inlineEl = $(`inline-detail-${id}`);
-    if (inlineEl && !inlineEl.classList.contains("hidden") && state.openCompanyId === id) {
-      inlineEl.classList.add("hidden");
-      inlineEl.previousElementSibling?.classList.remove("company-card-active");
-      state.openCompanyId = null;
-      return;
-    }
-    // 중복 호출 방지: 같은 카드 로딩 중이면 무시
-    if (state.loadingCompanyId === id) return;
-    state.loadingCompanyId = id;
-  }
+  if (state.loadingCompanyId === id) return;
+  state.loadingCompanyId = id;
 
   try {
     const detail = await api(`/api/workspace/companies/${id}`);
     if (!detail) return;
     state.selectedCompany = detail;
+    state.openCompanyId = id;
 
-    if (isMobile) {
-      // 기존에 열린 카드 닫기
-      if (state.openCompanyId && state.openCompanyId !== id) {
-        const prev = $(`inline-detail-${state.openCompanyId}`);
-        if (prev) {
-          prev.classList.add("hidden");
-          prev.previousElementSibling?.classList.remove("company-card-active");
-        }
-      }
-      const inlineEl = $(`inline-detail-${id}`);
-      if (inlineEl) {
-        inlineEl.innerHTML = renderCompanyDetail(detail);
-        inlineEl.classList.remove("hidden");
-        inlineEl.previousElementSibling?.classList.add("company-card-active");
-        state.openCompanyId = id;
-        inlineEl.scrollIntoView({ behavior: "smooth", block: "nearest" });
-      } else {
-        $("companyDetail").innerHTML = renderCompanyDetail(detail);
-      }
-    } else {
-      $("companyDetail").innerHTML = renderCompanyDetail(detail);
+    // 카드 활성 표시 갱신
+    document.querySelectorAll(".company-card").forEach(el => {
+      el.classList.toggle("company-card-active", el.dataset.companyOpen === id);
+    });
+
+    $("companyDetail").innerHTML = renderCompanyDetail(detail);
+
+    // 모바일에서만 상세 패널로 스크롤
+    if (window.innerWidth < 768) {
+      $("companyDetail").scrollIntoView({ behavior: "smooth", block: "start" });
     }
   } finally {
-    if (isMobile) state.loadingCompanyId = null;
+    state.loadingCompanyId = null;
   }
 }
 
