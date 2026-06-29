@@ -608,8 +608,8 @@ async function openCompany(companyId) {
   const id = String(companyId);
   const isMobile = window.innerWidth < 768;
 
-  // 모바일: API 호출 전에 토글 여부 판단 (이미 열린 카드 클릭 시 바로 닫기)
   if (isMobile) {
+    // 이미 열린 카드 → 닫기 (API 호출 없이)
     const inlineEl = $(`inline-detail-${id}`);
     if (inlineEl && !inlineEl.classList.contains("hidden") && state.openCompanyId === id) {
       inlineEl.classList.add("hidden");
@@ -617,34 +617,40 @@ async function openCompany(companyId) {
       state.openCompanyId = null;
       return;
     }
+    // 중복 호출 방지: 같은 카드 로딩 중이면 무시
+    if (state.loadingCompanyId === id) return;
+    state.loadingCompanyId = id;
   }
 
-  const detail = await api(`/api/workspace/companies/${id}`);
-  if (!detail) return;
-  state.selectedCompany = detail;
+  try {
+    const detail = await api(`/api/workspace/companies/${id}`);
+    if (!detail) return;
+    state.selectedCompany = detail;
 
-  if (isMobile) {
-    // 기존에 열린 카드 닫기
-    if (state.openCompanyId && state.openCompanyId !== id) {
-      const prev = $(`inline-detail-${state.openCompanyId}`);
-      if (prev) {
-        prev.classList.add("hidden");
-        prev.previousElementSibling?.classList.remove("company-card-active");
+    if (isMobile) {
+      // 기존에 열린 카드 닫기
+      if (state.openCompanyId && state.openCompanyId !== id) {
+        const prev = $(`inline-detail-${state.openCompanyId}`);
+        if (prev) {
+          prev.classList.add("hidden");
+          prev.previousElementSibling?.classList.remove("company-card-active");
+        }
       }
-    }
-    const inlineEl = $(`inline-detail-${id}`);
-    if (inlineEl) {
-      inlineEl.innerHTML = renderCompanyDetail(detail);
-      inlineEl.classList.remove("hidden");
-      inlineEl.previousElementSibling?.classList.add("company-card-active");
-      state.openCompanyId = id;
-      inlineEl.scrollIntoView({ behavior: "smooth", block: "nearest" });
+      const inlineEl = $(`inline-detail-${id}`);
+      if (inlineEl) {
+        inlineEl.innerHTML = renderCompanyDetail(detail);
+        inlineEl.classList.remove("hidden");
+        inlineEl.previousElementSibling?.classList.add("company-card-active");
+        state.openCompanyId = id;
+        inlineEl.scrollIntoView({ behavior: "smooth", block: "nearest" });
+      } else {
+        $("companyDetail").innerHTML = renderCompanyDetail(detail);
+      }
     } else {
-      // 목록에 없을 때(대시보드 등에서 호출) — PC 방식으로 폴백
       $("companyDetail").innerHTML = renderCompanyDetail(detail);
     }
-  } else {
-    $("companyDetail").innerHTML = renderCompanyDetail(detail);
+  } finally {
+    if (isMobile) state.loadingCompanyId = null;
   }
 }
 
