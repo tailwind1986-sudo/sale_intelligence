@@ -338,6 +338,27 @@ def update_company(company_id: int, payload: CompanyPayload, db: Session = Depen
     return _company_to_dict(row, detail=True)
 
 
+@app.get("/api/debug/insight-test/{company_id}")
+def debug_insight_test(company_id: int, db: Session = Depends(get_db), year_month: str = "2026-06"):
+    """임시 진단 엔드포인트 — 인증 없이 오류 원인 확인용"""
+    try:
+        from database.db import create_database
+        create_database()
+        from sqlalchemy import extract, text
+        # 테이블 존재 확인
+        tables = [r[0] for r in db.execute(text("SELECT name FROM sqlite_master WHERE type='table'")).fetchall()]
+        # 미팅 수 확인
+        year, month = int(year_month[:4]), int(year_month[5:7])
+        cnt = db.query(MeetingRecord).filter(
+            MeetingRecord.company_id == company_id,
+            extract("year", MeetingRecord.meeting_date) == year,
+            extract("month", MeetingRecord.meeting_date) == month,
+        ).count()
+        return {"tables": tables, "meeting_count": cnt, "status": "ok"}
+    except Exception as e:
+        return {"error": f"{type(e).__name__}: {e}"}
+
+
 @app.get("/api/workspace/hot-companies", dependencies=[Depends(_require_auth)])
 def hot_companies(limit: int = 10, db: Session = Depends(get_db)):
     """최근 90일 영업 신호 기준 HOT 고객사 순위"""
