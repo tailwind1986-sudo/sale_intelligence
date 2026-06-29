@@ -31,7 +31,7 @@ load_dotenv()
 
 from database.db import SessionLocal, create_database
 from database.models import ActionItem, Company, CompanyHistory, Contact, CustomerInfo, IssueTag, MeetingAnalysis, MeetingRecord, MonthlyInsight, Promise, SalesSignal, Schedule
-from services.ai_analyzer import analyze_meeting_transcript, generate_monthly_insight
+from services.ai_analyzer import analyze_meeting_transcript, generate_monthly_insight, generate_monthly_insight_for_company
 
 
 APP_DIR = Path(__file__).parent
@@ -444,118 +444,14 @@ def generate_company_monthly_insight(company_id: int, db: Session = Depends(get_
     """특정 고객사의 월간 인사이트를 GPT로 생성/갱신."""
     import traceback
     try:
-        return _do_generate_monthly_insight(company_id, db, year_month)
+        ym = year_month or _now_kst().strftime("%Y-%m")
+        result = generate_monthly_insight_for_company(company_id, db, ym)
+        return {"ok": True, "year_month": ym, "result": result}
     except HTTPException:
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"[서버오류] {type(e).__name__}: {e}")
 
-
-def _do_generate_monthly_insight(company_id: int, db, year_month):
-    # monthly_insights 테이블이 없는 구버전 서버 DB 대비 — 필요 시 즉시 생성
-    from database.db import create_database
-    create_database()
-
-    ym = year_month or _now_kst().strftime("%Y-%m")
-
-    company = db.get(Company, company_id)
-    if not company:
-        raise HTTPException(status_code=404, detail="Company not found")
-
-    # 해당 월 미팅 요약 수집
-    year, month = int(ym[:4]), int(ym[5:7])
-    from sqlalchemy import extract
-    month_meetings = (
-        db.query(MeetingRecord)
-        .options(joinedload(MeetingRecord.analysis))
-        .filter(
-            MeetingRecord.company_id == company_id,
-            extract("year", MeetingRecord.meeting_date) == year,
-            extract("month", MeetingRecord.meeting_date) == month,
-        )
-        .all()
-    )
-    meeting_summaries = [
-        {
-            "date": str(m.meeting_date) if m.meeting_date else "",
-            "summary": (m.analysis.one_line_summary or "") if m.analysis else "",
-        }
-        for m in month_meetings
-    ]
-
-    if not meeting_summaries:
-        raise HTTPException(
-            status_code=400,
-            detail=f"{ym} 에 분석된 미팅이 없어 인사이트를 생성할 수 없습니다."
-        )
-
-    # CompanyHistory 지표
-    history_row = db.query(CompanyHistory).filter(
-        CompanyHistory.company_id == company_id,
-        CompanyHistory.year_month == ym,
-    ).first()
-    history_dict = None
-    if history_row:
-        history_dict = {
-            "trust_score_avg": history_row.trust_score_avg,
-            "risk_score_avg": history_row.risk_score_avg,
-            "meeting_count": history_row.meeting_count,
-            "sales_stage": history_row.sales_stage,
-        }
-
-    # 이전 인사이트 (최근 3개월)
-    prev_insights_rows = (
-        db.query(MonthlyInsight)
-        .filter(
-            MonthlyInsight.company_id == company_id,
-            MonthlyInsight.year_month < ym,
-        )
-        .order_by(MonthlyInsight.year_month.desc())
-        .limit(3)
-        .all()
-    )
-    prev_insights = [
-        {"year_month": p.year_month, "summary": p.summary or ""}
-        for p in prev_insights_rows
-    ]
-
-    result = generate_monthly_insight(
-        company_name=company.name,
-        year_month=ym,
-        meeting_summaries=meeting_summaries,
-        company_history=history_dict,
-        prev_insights=prev_insights,
-    )
-
-    # upsert
-    existing = db.query(MonthlyInsight).filter(
-        MonthlyInsight.company_id == company_id,
-        MonthlyInsight.year_month == ym,
-    ).first()
-    if existing:
-        existing.summary = result.get("summary")
-        existing.key_trends = result.get("key_trends", [])
-        existing.risks = result.get("risks", [])
-        existing.opportunities = result.get("opportunities", [])
-        existing.recommended_actions = result.get("recommended_actions", [])
-        existing.relationship_score = result.get("relationship_score")
-        existing.deal_probability = result.get("deal_probability")
-        existing.updated_at = _now_kst()
-    else:
-        db.add(MonthlyInsight(
-            company_id=company_id,
-            year_month=ym,
-            summary=result.get("summary"),
-            key_trends=result.get("key_trends", []),
-            risks=result.get("risks", []),
-            opportunities=result.get("opportunities", []),
-            recommended_actions=result.get("recommended_actions", []),
-            relationship_score=result.get("relationship_score"),
-            deal_probability=result.get("deal_probability"),
-        ))
-    db.commit()
-
-    return {"ok": True, "year_month": ym, "result": result}
 
 
 @app.delete("/api/workspace/companies/{company_id}", dependencies=[Depends(_require_auth)])

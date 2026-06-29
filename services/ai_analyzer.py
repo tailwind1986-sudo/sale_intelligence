@@ -433,3 +433,96 @@ def generate_monthly_report_summary(
         "overall_summary": result.get("overall_summary", ""),
         "next_month_actions": result.get("next_month_actions", []),
     }
+
+
+def generate_monthly_insight_for_company(company_id: int, db, year_month: str) -> dict:
+    """DB에서 데이터를 직접 조회해 MonthlyInsight를 생성/upsert하는 헬퍼."""
+    from database.models import Company, CompanyHistory, MeetingRecord, MonthlyInsight
+    from sqlalchemy.orm import joinedload
+    from sqlalchemy import extract
+    from database.db import create_database
+    import datetime
+
+    create_database()
+
+    company = db.get(Company, company_id)
+    if not company:
+        raise ValueError(f"Company {company_id} not found")
+
+    year, month = int(year_month[:4]), int(year_month[5:7])
+    month_meetings = (
+        db.query(MeetingRecord)
+        .options(joinedload(MeetingRecord.analysis))
+        .filter(
+            MeetingRecord.company_id == company_id,
+            extract("year", MeetingRecord.meeting_date) == year,
+            extract("month", MeetingRecord.meeting_date) == month,
+        )
+        .all()
+    )
+    meeting_summaries = [
+        {
+            "date": str(m.meeting_date) if m.meeting_date else "",
+            "summary": (m.analysis.one_line_summary or "") if m.analysis else "",
+        }
+        for m in month_meetings
+    ]
+    if not meeting_summaries:
+        raise ValueError(f"{year_month} 에 분석된 미팅이 없습니다.")
+
+    history_row = db.query(CompanyHistory).filter(
+        CompanyHistory.company_id == company_id,
+        CompanyHistory.year_month == year_month,
+    ).first()
+    history_dict = {
+        "trust_score_avg": history_row.trust_score_avg,
+        "risk_score_avg": history_row.risk_score_avg,
+        "meeting_count": history_row.meeting_count,
+        "sales_stage": history_row.sales_stage,
+    } if history_row else None
+
+    prev_insights_rows = (
+        db.query(MonthlyInsight)
+        .filter(MonthlyInsight.company_id == company_id, MonthlyInsight.year_month < year_month)
+        .order_by(MonthlyInsight.year_month.desc())
+        .limit(3)
+        .all()
+    )
+    prev_insights = [{"year_month": p.year_month, "summary": p.summary or ""} for p in prev_insights_rows]
+
+    result = generate_monthly_insight(
+        company_name=company.name,
+        year_month=year_month,
+        meeting_summaries=meeting_summaries,
+        company_history=history_dict,
+        prev_insights=prev_insights,
+    )
+
+    now_kst = datetime.datetime.utcnow() + datetime.timedelta(hours=9)
+    existing = db.query(MonthlyInsight).filter(
+        MonthlyInsight.company_id == company_id,
+        MonthlyInsight.year_month == year_month,
+    ).first()
+    if existing:
+        existing.summary = result.get("summary")
+        existing.key_trends = result.get("key_trends", [])
+        existing.risks = result.get("risks", [])
+        existing.opportunities = result.get("opportunities", [])
+        existing.recommended_actions = result.get("recommended_actions", [])
+        existing.relationship_score = result.get("relationship_score")
+        existing.deal_probability = result.get("deal_probability")
+        existing.updated_at = now_kst
+    else:
+        db.add(MonthlyInsight(
+            company_id=company_id,
+            year_month=year_month,
+            summary=result.get("summary"),
+            key_trends=result.get("key_trends", []),
+            risks=result.get("risks", []),
+            opportunities=result.get("opportunities", []),
+            recommended_actions=result.get("recommended_actions", []),
+            relationship_score=result.get("relationship_score"),
+            deal_probability=result.get("deal_probability"),
+        ))
+    db.commit()
+    return result

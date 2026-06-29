@@ -627,7 +627,7 @@ def build_monthly_report_data(db, year_month: str | None = None) -> dict:
     from database.models import Company, MonthlyInsight, MeetingRecord, SalesSignal, IssueTag
     from sqlalchemy.orm import joinedload
     from sqlalchemy import func, extract, case
-    from services.ai_analyzer import generate_monthly_insight, generate_monthly_report_summary
+    from services.ai_analyzer import generate_monthly_insight_for_company, generate_monthly_report_summary
 
     now = _local_now_naive()
     if not year_month:
@@ -662,7 +662,7 @@ def build_monthly_report_data(db, year_month: str | None = None) -> dict:
     generated, failed = [], []
     for company in companies_with_meetings:
         try:
-            generate_monthly_insight(db, company.id, year_month)
+            generate_monthly_insight_for_company(company.id, db, year_month)
             generated.append(company.name)
         except Exception as e:
             failed.append({"name": company.name, "error": str(e)})
