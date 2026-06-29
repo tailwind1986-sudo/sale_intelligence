@@ -369,6 +369,29 @@ def debug_insight_test(company_id: int, db: Session = Depends(get_db), year_mont
              "summary": (m.analysis.one_line_summary or "")[:30] if m.analysis else ""}
             for m in meetings
         ]
+        # CompanyHistory 조회 테스트
+        history_row = db.query(CompanyHistory).filter(
+            CompanyHistory.company_id == company_id,
+            CompanyHistory.year_month == year_month,
+        ).first()
+        result["history_found"] = history_row is not None
+
+        # MonthlyInsight 조회 테스트
+        prev = db.query(MonthlyInsight).filter(
+            MonthlyInsight.company_id == company_id,
+        ).count()
+        result["existing_insights"] = prev
+
+        # GPT 호출 테스트
+        gpt_result = generate_monthly_insight(
+            company_name="테스트",
+            year_month=year_month,
+            meeting_summaries=[{"date": "2026-06-01", "summary": "테스트 미팅"}],
+            company_history=None,
+            prev_insights=[],
+        )
+        result["gpt_keys"] = list(gpt_result.keys())
+
         result["status"] = "ok"
     except Exception as e:
         result["error"] = f"{type(e).__name__}: {e}"
