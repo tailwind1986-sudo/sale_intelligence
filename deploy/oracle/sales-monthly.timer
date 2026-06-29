@@ -1,0 +1,11 @@
+[Unit]
+Description=Run Sales Intelligence monthly report on the 1st of each month at 09:00 KST (00:00 UTC)
+
+[Timer]
+OnCalendar=*-*-01 00:00:00 UTC
+AccuracySec=60s
+Persistent=true
+Unit=sales-monthly.service
+
+[Install]
+WantedBy=timers.target

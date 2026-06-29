@@ -620,3 +620,164 @@ def check_and_send_reminders(db) -> int:
     if sent:
         db.commit()
     return sent
+
+
+def send_monthly_report(db, year_month: str | None = None) -> bool:
+    """월말 자동 실행: 전월 전체 고객사 insight 생성 + 텔레그램 전사 월간 리포트 전송"""
+    from database.models import Company, MonthlyInsight, MeetingRecord, SalesSignal, IssueTag
+    from sqlalchemy.orm import joinedload
+    from services.ai_analyzer import generate_monthly_insight
+    from calendar import monthrange
+
+    token = _get_token()
+    chat_id = _get_chat_id()
+    if not token or not chat_id:
+        return False
+
+    now = _local_now_naive()
+    if not year_month:
+        # 전월 계산
+        first_of_this = now.replace(day=1)
+        prev = first_of_this - timedelta(days=1)
+        year_month = f"{prev.year}-{prev.month:02d}"
+
+    year, month = int(year_month.split("-")[0]), int(year_month.split("-")[1])
+
+    # 1. 해당 월에 미팅이 있는 고객사만 대상
+    from sqlalchemy import func, extract
+    companies_with_meetings = (
+        db.query(Company)
+        .join(MeetingRecord, MeetingRecord.company_id == Company.id)
+        .filter(
+            extract("year", MeetingRecord.meeting_date) == year,
+            extract("month", MeetingRecord.meeting_date) == month,
+        )
+        .distinct()
+        .all()
+    )
+
+    if not companies_with_meetings:
+        msg = f"📊 <b>{year_month} 월간 리포트</b>\n\n해당 월 미팅 기록이 없어 리포트를 생성하지 않았습니다."
+        return send_message(msg, chat_id)
+
+    # 2. 각 고객사 insight 자동 생성 (이미 있으면 재생성)
+    generated = []
+    failed = []
+    for company in companies_with_meetings:
+        try:
+            generate_monthly_insight(db, company.id, year_month)
+            generated.append(company)
+        except Exception as e:
+            failed.append((company.name, str(e)))
+
+    db.expire_all()
+
+    # 3. 생성된 insight 로드
+    insights = (
+        db.query(MonthlyInsight)
+        .filter(MonthlyInsight.year_month == year_month)
+        .options(joinedload(MonthlyInsight.company))
+        .all()
+    )
+
+    # 4. 전체 영업 신호 집계
+    hot_companies = (
+        db.query(Company.name, func.sum(
+            SalesSignal.strength.case(
+                (SalesSignal.strength == "HIGH", 3),
+                (SalesSignal.strength == "MED", 1),
+                else_=0
+            )
+        ).label("hot"))
+        .join(SalesSignal, SalesSignal.company_id == Company.id)
+        .filter(
+            extract("year", SalesSignal.detected_at) == year,
+            extract("month", SalesSignal.detected_at) == month,
+        )
+        .group_by(Company.id)
+        .order_by(func.sum(
+            SalesSignal.strength.case(
+                (SalesSignal.strength == "HIGH", 3),
+                (SalesSignal.strength == "MED", 1),
+                else_=0
+            )
+        ).desc())
+        .limit(5)
+        .all()
+    )
+
+    # 5. 반복 이슈 집계
+    top_issues = (
+        db.query(IssueTag.tag, func.count(IssueTag.id).label("cnt"))
+        .join(MeetingRecord, IssueTag.meeting_id == MeetingRecord.id)
+        .filter(
+            extract("year", MeetingRecord.meeting_date) == year,
+            extract("month", MeetingRecord.meeting_date) == month,
+        )
+        .group_by(IssueTag.tag)
+        .order_by(func.count(IssueTag.id).desc())
+        .limit(5)
+        .all()
+    )
+
+    # 6. 정체 고객 탐지 (최근 60일 이상 미팅 없는 고객사)
+    sixty_days_ago = now.date() - timedelta(days=60)
+    stagnant = (
+        db.query(Company)
+        .outerjoin(MeetingRecord, MeetingRecord.company_id == Company.id)
+        .group_by(Company.id)
+        .having(
+            (func.max(MeetingRecord.meeting_date) < sixty_days_ago) |
+            (func.max(MeetingRecord.meeting_date) == None)
+        )
+        .all()
+    )
+
+    # 7. 메시지 조립
+    lines = [f"📊 <b>{year_month} 월간 영업 리포트</b>"]
+    lines.append(f"분석 고객사: {len(generated)}개 / 미팅 {len(companies_with_meetings)}개사")
+
+    # 종합 점수 높은 순
+    scored = sorted(insights, key=lambda i: (i.deal_probability or 0) + (i.relationship_score or 0) / 2, reverse=True)
+
+    lines.append(f"\n<b>🔥 이달 HOT 고객사 (딜 가능성 상위)</b>")
+    for ins in scored[:5]:
+        name = escape(ins.company.name if ins.company else "?")
+        deal = ins.deal_probability or "-"
+        rel = ins.relationship_score or "-"
+        summary = escape((ins.summary or "")[:60])
+        lines.append(f"• {name} — 딜 <b>{deal}%</b> / 관계 {rel}점\n  {summary}")
+
+    if hot_companies:
+        lines.append(f"\n<b>📡 영업 신호 상위</b>")
+        for name, score in hot_companies:
+            lines.append(f"• {escape(name or '?')} {score}점")
+
+    if top_issues:
+        lines.append(f"\n<b>⚠️ 이달 반복 이슈</b>")
+        for tag, cnt in top_issues:
+            lines.append(f"• {escape(tag)} ({cnt}건)")
+
+    if stagnant:
+        lines.append(f"\n<b>😶 정체 고객 ({len(stagnant)}개사, 60일 이상 미팅 없음)</b>")
+        for c in stagnant[:5]:
+            lines.append(f"• {escape(c.name)}")
+        if len(stagnant) > 5:
+            lines.append(f"  외 {len(stagnant) - 5}개사")
+
+    # 리스크 고객 (deal_probability 낮고 relationship_score 낮은 것)
+    risk_cos = [i for i in insights if (i.risks or []) and (i.deal_probability or 100) < 40]
+    if risk_cos:
+        lines.append(f"\n<b>🚨 위험 고객 ({len(risk_cos)}개사)</b>")
+        for ins in risk_cos[:3]:
+            name = escape(ins.company.name if ins.company else "?")
+            top_risk = ins.risks[0] if ins.risks else {}
+            risk_txt = escape(top_risk.get("risk", "") if isinstance(top_risk, dict) else str(top_risk))
+            lines.append(f"• {name}: {risk_txt}")
+
+    if failed:
+        lines.append(f"\n⚙️ 생성 실패: {', '.join(escape(n) for n, _ in failed)}")
+
+    lines.append(f"\n<i>자동 생성 · {now.strftime('%Y-%m-%d %H:%M')} KST</i>")
+
+    return send_message("\n".join(lines), chat_id)

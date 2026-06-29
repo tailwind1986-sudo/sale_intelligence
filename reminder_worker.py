@@ -8,6 +8,7 @@ from services.telegram_service import (
     send_weekly_summary,
     send_afternoon_briefing,
     send_weekly_summary_for_week,
+    send_monthly_report,
 )
 
 
@@ -29,6 +30,13 @@ def main() -> int:
         if mode == "weekly":
             ok = send_weekly_summary_for_week(db, week_offset=0)
             print(f"Weekly summary sent: {ok}")
+            return 1 if ok else 0
+
+        if mode == "monthly":
+            # sys.argv[2]로 year_month 지정 가능 (예: 2026-06), 없으면 전월 자동
+            ym = sys.argv[2] if len(sys.argv) > 2 else None
+            ok = send_monthly_report(db, ym)
+            print(f"Monthly report sent: {ok}")
             return 1 if ok else 0
 
         sent = check_and_send_reminders(db)

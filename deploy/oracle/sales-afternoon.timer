@@ -1,0 +1,11 @@
+[Unit]
+Description=Run Sales Intelligence afternoon briefing at 17:30 KST (08:30 UTC)
+
+[Timer]
+OnCalendar=*-*-* 08:30:00 UTC
+AccuracySec=60s
+Persistent=true
+Unit=sales-afternoon.service
+
+[Install]
+WantedBy=timers.target
