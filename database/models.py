@@ -147,6 +147,41 @@ class MeetingAnalysis(Base):
     meeting = relationship("MeetingRecord", back_populates="analysis")
 
 
+class CompanyHistory(Base):
+    """고객사 월별 상태 스냅샷 — 관계 온도·딜 단계 변화 추적"""
+    __tablename__ = "company_history"
+
+    id = Column(Integer, primary_key=True)
+    company_id = Column(Integer, ForeignKey("companies.id"), nullable=False)
+    year_month = Column(String(7), nullable=False)   # "2026-06"
+    sales_stage = Column(String(100))
+    trust_score_avg = Column(Float)                  # 해당 월 미팅 trust_score 평균
+    risk_score_avg = Column(Float)
+    mood_positive = Column(Integer, default=0)       # 긍정 미팅 수
+    mood_negative = Column(Integer, default=0)       # 부정 미팅 수
+    meeting_count = Column(Integer, default=0)
+    memo = Column(Text)                              # 나중에 AI 월간 총평
+    created_at = Column(DateTime, default=datetime.now)
+    updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
+
+    company = relationship("Company", backref="history")
+
+
+class IssueTag(Base):
+    """회의록별 이슈 태그 — 반복 이슈 분석용"""
+    __tablename__ = "issue_tags"
+
+    id = Column(Integer, primary_key=True)
+    company_id = Column(Integer, ForeignKey("companies.id"), nullable=False)
+    meeting_id = Column(Integer, ForeignKey("meeting_records.id"), nullable=False)
+    tag = Column(String(50), nullable=False)         # 가격/납기/인증/기술/경쟁사/예산/기타
+    content = Column(Text)                           # 원문 발췌
+    created_at = Column(DateTime, default=datetime.now)
+
+    company = relationship("Company", backref="issue_tags")
+    meeting = relationship("MeetingRecord", backref="issue_tags")
+
+
 class Promise(Base):
     __tablename__ = "promises"
 

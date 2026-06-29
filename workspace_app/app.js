@@ -572,6 +572,62 @@ async function openCompany(companyId) {
   $("companyDetail").innerHTML = renderCompanyDetail(detail);
 }
 
+function renderIssueSummary(c) {
+  const issues = c.issue_summary || [];
+  if (!issues.length) return "";
+  const tagColor = {
+    "가격": "#fee2e2:#b91c1c",
+    "납기": "#fef3c7:#92400e",
+    "인증": "#ede9fe:#5b21b6",
+    "기술": "#dbeafe:#1e40af",
+    "경쟁사": "#fce7f3:#9d174d",
+    "예산": "#fef9c3:#713f12",
+    "관계": "#f0fdf4:#166534",
+    "기타": "#f3f4f6:#4b5563",
+  };
+  return `
+    <div class="detail-section">
+      <h3>반복 이슈</h3>
+      <div class="issue-tag-row">
+        ${issues.map(({ tag, count }) => {
+          const [bg, color] = (tagColor[tag] || tagColor["기타"]).split(":");
+          return `<span class="issue-tag-badge" style="background:${bg};color:${color}">${escapeHtml(tag)} <strong>${count}</strong></span>`;
+        }).join("")}
+      </div>
+    </div>`;
+}
+
+function renderCompanyHistory(c) {
+  const history = c.company_history || [];
+  if (!history.length) return "";
+  const moodDot = m => m > 0 ? "🟢" : m < 0 ? "🔴" : "⚪";
+  return `
+    <div class="detail-section">
+      <h3>관계 추이</h3>
+      <div class="history-table">
+        <div class="history-head">
+          <span>월</span><span>딜단계</span><span>신뢰</span><span>리스크</span><span>분위기</span>
+        </div>
+        ${history.map(h => {
+          const trust = h.trust_score_avg != null ? Math.round(h.trust_score_avg) : "-";
+          const risk  = h.risk_score_avg  != null ? Math.round(h.risk_score_avg)  : "-";
+          const trustBar = h.trust_score_avg != null
+            ? `<div class="hist-bar-wrap"><div class="hist-bar trust-bar" style="width:${h.trust_score_avg}%"></div></div>`
+            : "";
+          const moodNet = (h.mood_positive || 0) - (h.mood_negative || 0);
+          return `
+          <div class="history-row">
+            <span class="hist-ym">${h.year_month}</span>
+            <span class="hist-stage">${escapeHtml(h.sales_stage || "-")}</span>
+            <span class="hist-trust">${trustBar}<em>${trust}</em></span>
+            <span class="hist-risk" style="color:${risk > 60 ? "var(--danger)" : risk > 30 ? "var(--warning)" : "var(--accent)"}">${risk}</span>
+            <span>${moodDot(moodNet)} ${h.meeting_count}회</span>
+          </div>`;
+        }).join("")}
+      </div>
+    </div>`;
+}
+
 function renderCompanyDetail(c) {
   return `
     <div class="detail-head">
@@ -605,6 +661,8 @@ function renderCompanyDetail(c) {
         </div>
       `).join("") || `<p class="empty">고객 정보가 없습니다.</p>`}
     </div>
+    ${renderIssueSummary(c)}
+    ${renderCompanyHistory(c)}
     <div class="detail-section">
       <h3>최근 미팅</h3>
       ${(c.recent_meetings || []).map(row => `<div class="mini-row"><div><strong>${escapeHtml(row.date)}</strong><span>${escapeHtml(row.summary || "-")}</span></div></div>`).join("") || `<p class="empty">최근 미팅이 없습니다.</p>`}

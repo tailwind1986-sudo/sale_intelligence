@@ -30,7 +30,7 @@ from sqlalchemy.orm.attributes import flag_modified
 load_dotenv()
 
 from database.db import SessionLocal, create_database
-from database.models import ActionItem, Company, Contact, CustomerInfo, MeetingAnalysis, MeetingRecord, Promise, Schedule
+from database.models import ActionItem, Company, CompanyHistory, Contact, CustomerInfo, IssueTag, MeetingAnalysis, MeetingRecord, Promise, Schedule
 from services.ai_analyzer import analyze_meeting_transcript
 
 
@@ -303,6 +303,8 @@ def workspace_company_detail(company_id: int, db: Session = Depends(get_db)):
             joinedload(Company.promises),
             joinedload(Company.action_items),
             joinedload(Company.customer_infos).joinedload(CustomerInfo.contact),
+            joinedload(Company.issue_tags),
+            joinedload(Company.history),
         )
         .filter(Company.id == company_id)
         .first()
@@ -538,6 +540,28 @@ def _company_to_dict(c: Company, detail: bool = False) -> dict:
             }
             for m in recent
         ]
+        # 이슈 태그 집계
+        from collections import Counter
+        tags = getattr(c, "issue_tags", []) or []
+        tag_counts = Counter(t.tag for t in tags if t.tag)
+        data["issue_summary"] = [
+            {"tag": tag, "count": cnt}
+            for tag, cnt in sorted(tag_counts.items(), key=lambda x: -x[1])
+        ]
+        # 월별 히스토리
+        history = sorted(getattr(c, "history", []) or [], key=lambda h: h.year_month)
+        data["company_history"] = [
+            {
+                "year_month": h.year_month,
+                "sales_stage": h.sales_stage or "",
+                "trust_score_avg": h.trust_score_avg,
+                "risk_score_avg": h.risk_score_avg,
+                "mood_positive": h.mood_positive or 0,
+                "mood_negative": h.mood_negative or 0,
+                "meeting_count": h.meeting_count or 0,
+            }
+            for h in history[-12:]  # 최근 12개월
+        ]
     return data
 
 
@@ -754,9 +778,86 @@ def _analysis_from_result(record: MeetingRecord, result: dict) -> MeetingAnalysi
     )
 
 
+def _upsert_issue_tags(db: Session, record: MeetingRecord, result: dict) -> None:
+    """회의록 분석 결과에서 IssueTag 저장 (기존 것 삭제 후 재생성)."""
+    db.query(IssueTag).filter(IssueTag.meeting_id == record.id).delete()
+    tags = result.get("issue_tags") or []
+    if isinstance(tags, list):
+        for item in tags:
+            if not isinstance(item, dict):
+                continue
+            tag = (item.get("tag") or "").strip()
+            if tag:
+                db.add(IssueTag(
+                    company_id=record.company_id,
+                    meeting_id=record.id,
+                    tag=tag,
+                    content=item.get("content") or "",
+                ))
+
+
+def _upsert_company_history(db: Session, record: MeetingRecord, result: dict) -> None:
+    """회의록 분석 결과로 해당 월 CompanyHistory 스냅샷 갱신."""
+    if not record.company_id:
+        return
+    ref_date = record.meeting_date or (record.created_at.date() if record.created_at else None)
+    if not ref_date:
+        return
+    ym = ref_date.strftime("%Y-%m")
+
+    # 해당 월 전체 분석 완료 미팅 집계
+    from sqlalchemy import extract
+    month_analyses = (
+        db.query(MeetingAnalysis)
+        .join(MeetingRecord, MeetingAnalysis.meeting_id == MeetingRecord.id)
+        .filter(
+            MeetingRecord.company_id == record.company_id,
+            extract("year", MeetingRecord.meeting_date) == ref_date.year,
+            extract("month", MeetingRecord.meeting_date) == ref_date.month,
+        )
+        .all()
+    )
+    trust_scores = [a.trust_score for a in month_analyses if a.trust_score is not None]
+    risk_scores  = [a.risk_score  for a in month_analyses if a.risk_score  is not None]
+    moods = [
+        (a.meeting_mood or {}).get("overall", "")
+        for a in month_analyses
+        if isinstance(a.meeting_mood, dict)
+    ]
+    mood_pos = sum(1 for m in moods if m == "긍정적")
+    mood_neg = sum(1 for m in moods if m == "부정적")
+
+    company = db.get(Company, record.company_id)
+    history = db.query(CompanyHistory).filter(
+        CompanyHistory.company_id == record.company_id,
+        CompanyHistory.year_month == ym,
+    ).first()
+    if history:
+        history.sales_stage     = company.sales_stage if company else history.sales_stage
+        history.trust_score_avg = round(sum(trust_scores) / len(trust_scores), 1) if trust_scores else None
+        history.risk_score_avg  = round(sum(risk_scores)  / len(risk_scores),  1) if risk_scores  else None
+        history.mood_positive   = mood_pos
+        history.mood_negative   = mood_neg
+        history.meeting_count   = len(month_analyses)
+        history.updated_at      = _now_kst()
+    else:
+        db.add(CompanyHistory(
+            company_id      = record.company_id,
+            year_month      = ym,
+            sales_stage     = company.sales_stage if company else None,
+            trust_score_avg = round(sum(trust_scores) / len(trust_scores), 1) if trust_scores else None,
+            risk_score_avg  = round(sum(risk_scores)  / len(risk_scores),  1) if risk_scores  else None,
+            mood_positive   = mood_pos,
+            mood_negative   = mood_neg,
+            meeting_count   = len(month_analyses),
+        ))
+
+
 def _save_meeting_analysis(db: Session, record: MeetingRecord, result: dict) -> None:
     db.add(_analysis_from_result(record, result))
     _add_generated_items(db, record, result)
+    _upsert_issue_tags(db, record, result)
+    _upsert_company_history(db, record, result)
     db.commit()
 
 
@@ -823,6 +924,9 @@ def _analyze_record(db: Session, record: MeetingRecord, *, schedule_only: bool =
     result = analyze_meeting_transcript(record.raw_text, prev_meetings=prev)
     if record.analysis:
         _update_meeting_analysis(record.analysis, result, schedule_only=schedule_only)
+        if not schedule_only:
+            _upsert_issue_tags(db, record, result)
+            _upsert_company_history(db, record, result)
         db.commit()
     else:
         _save_meeting_analysis(db, record, result)
