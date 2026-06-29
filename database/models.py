@@ -27,6 +27,7 @@ class Schedule(Base):
     remind_enabled = Column(Boolean, default=True)
     remind_minutes = Column(Integer, default=1440)   # 기본 1일 전(1440분)
     remind_sent = Column(Boolean, default=False)
+    briefing_sent = Column(Boolean, default=False)   # 미팅 전 브리핑 발송 여부
     created_at = Column(DateTime, default=datetime.now)
     updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
 

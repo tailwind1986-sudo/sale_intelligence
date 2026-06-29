@@ -580,6 +580,139 @@ def send_daily_digest_for_date(db, target_date) -> bool:
     return send_message("\n".join(lines), chat_id)
 
 
+def send_pre_meeting_briefings(db) -> int:
+    """50~70분 후 시작하는 일정에 대해 미팅 전 브리핑 발송."""
+    from database.models import Schedule, MeetingRecord, ActionItem, Promise, MonthlyInsight
+    from sqlalchemy.orm import joinedload
+    from sqlalchemy import extract
+    from services.ai_analyzer import generate_pre_meeting_briefing
+
+    token = _get_token()
+    chat_id = _get_chat_id()
+    if not token or not chat_id:
+        return 0
+
+    now = _local_now_naive()
+    window_start = now + timedelta(minutes=50)
+    window_end = now + timedelta(minutes=70)
+
+    upcoming = (
+        db.query(Schedule)
+        .options(joinedload(Schedule.company))
+        .filter(
+            Schedule.all_day == False,
+            Schedule.briefing_sent == False,
+            Schedule.start_dt >= window_start,
+            Schedule.start_dt <= window_end,
+        )
+        .all()
+    )
+
+    sent = 0
+    for s in upcoming:
+        meeting_time = s.start_dt.strftime("%H:%M")
+        company = s.company
+
+        if company:
+            # 최근 미팅 요약 (최근 5건)
+            recent = (
+                db.query(MeetingRecord)
+                .options(joinedload(MeetingRecord.analysis))
+                .filter(MeetingRecord.company_id == company.id)
+                .order_by(MeetingRecord.meeting_date.desc())
+                .limit(5).all()
+            )
+            recent_meetings = [
+                {
+                    "date": str(m.meeting_date),
+                    "summary": (m.analysis.one_line_summary or "") if m.analysis else "",
+                }
+                for m in recent
+            ]
+
+            # 미결 액션
+            open_actions = [
+                a.content for a in db.query(ActionItem).filter(
+                    ActionItem.company_id == company.id,
+                    ActionItem.status.notin_(["완료"]),
+                ).limit(5).all()
+            ]
+
+            # 미확인 약속
+            open_promises = [
+                p.content for p in db.query(Promise).filter(
+                    Promise.company_id == company.id,
+                    Promise.status.notin_(["완료"]),
+                ).limit(5).all()
+            ]
+
+            # 최근 월간 인사이트
+            latest_insight = (
+                db.query(MonthlyInsight)
+                .filter(MonthlyInsight.company_id == company.id)
+                .order_by(MonthlyInsight.year_month.desc())
+                .first()
+            )
+            insight_summary = latest_insight.summary if latest_insight else None
+
+            try:
+                briefing = generate_pre_meeting_briefing(
+                    company_name=company.name,
+                    meeting_title=s.title or "미팅",
+                    meeting_time=meeting_time,
+                    recent_meetings=recent_meetings,
+                    open_actions=open_actions,
+                    open_promises=open_promises,
+                    monthly_insight_summary=insight_summary,
+                )
+                situation = briefing.get("situation", "")
+                talking_points = briefing.get("talking_points", [])
+                cautions = briefing.get("cautions", [])
+
+                lines = [
+                    f"📋 <b>[미팅 브리핑] {escape(company.name)}</b>",
+                    f"🕐 {meeting_time} — {escape(s.title or '미팅')}",
+                    "",
+                    f"<b>📌 현황</b>\n{escape(situation)}",
+                ]
+                if talking_points:
+                    lines.append("\n<b>💬 오늘 다룰 포인트</b>")
+                    for i, pt in enumerate(talking_points, 1):
+                        lines.append(f"{i}. {escape(pt)}")
+                if cautions:
+                    lines.append("\n<b>⚠️ 주의사항</b>")
+                    for c in cautions:
+                        lines.append(f"• {escape(c)}")
+                if open_actions:
+                    lines.append(f"\n<b>📋 미결 액션 ({len(open_actions)}건)</b>")
+                    for a in open_actions[:3]:
+                        lines.append(f"• {escape(a)}")
+
+                text = "\n".join(lines)
+            except Exception as e:
+                text = (
+                    f"📋 <b>[미팅 알림] {escape(company.name)}</b>\n"
+                    f"🕐 {meeting_time} — {escape(s.title or '미팅')}\n"
+                    f"(브리핑 생성 실패: {escape(str(e))})"
+                )
+        else:
+            # 회사 없는 일정 — 단순 알림
+            text = (
+                f"📋 <b>[미팅 알림]</b>\n"
+                f"🕐 {meeting_time} — {escape(s.title or '일정')}"
+            )
+            if s.description:
+                text += f"\n{escape(s.description)}"
+
+        if send_message(text, chat_id):
+            s.briefing_sent = True
+            sent += 1
+
+    if sent:
+        db.commit()
+    return sent
+
+
 def check_and_send_reminders(db) -> int:
     """Send due Telegram reminders and mark them as sent."""
     from database.models import Schedule

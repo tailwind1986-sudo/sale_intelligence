@@ -9,6 +9,7 @@ from services.telegram_service import (
     send_afternoon_briefing,
     send_weekly_summary_for_week,
     send_monthly_report,
+    send_pre_meeting_briefings,
 )
 
 
@@ -39,9 +40,11 @@ def main() -> int:
             print(f"Monthly report sent: {ok}")
             return 1 if ok else 0
 
+        # 기본 모드: 일정 알림 + 미팅 전 브리핑 동시 체크
         sent = check_and_send_reminders(db)
-        print(f"Telegram reminders sent: {sent}")
-        return sent
+        briefings = send_pre_meeting_briefings(db)
+        print(f"Telegram reminders sent: {sent}, briefings: {briefings}")
+        return sent + briefings
     finally:
         db.close()
 

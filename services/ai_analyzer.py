@@ -526,3 +526,76 @@ def generate_monthly_insight_for_company(company_id: int, db, year_month: str) -
         ))
     db.commit()
     return result
+
+
+def generate_pre_meeting_briefing(
+    company_name: str,
+    meeting_title: str,
+    meeting_time: str,
+    recent_meetings: list[dict],
+    open_actions: list[str],
+    open_promises: list[str],
+    monthly_insight_summary: str | None,
+) -> dict:
+    """미팅 1시간 전 브리핑 GPT 생성. 반환: {situation, talking_points, cautions}"""
+    meetings_text = "\n".join(
+        f"- [{m.get('date','')}] {m.get('summary','')}" for m in recent_meetings[:5]
+    ) or "최근 미팅 기록 없음"
+
+    actions_text = "\n".join(f"- {a}" for a in open_actions[:5]) or "없음"
+    promises_text = "\n".join(f"- {p}" for p in open_promises[:5]) or "없음"
+    insight_text = monthly_insight_summary or "없음"
+
+    system_prompt = """당신은 B2B 영업 전문 비서입니다.
+미팅 직전 담당자에게 핵심 브리핑을 JSON으로 제공하세요.
+
+출력 형식:
+{
+  "situation": "현재 이 고객사와의 관계/상황 2~3문장 요약",
+  "talking_points": ["오늘 꼭 다뤄야 할 주제1", "주제2", "주제3"],
+  "cautions": ["주의사항1", "주의사항2"]
+}
+
+규칙:
+- situation: 핵심 현황만, 군더더기 없이
+- talking_points: 3개, 구체적 액션 중심 (예: "견적서 제출 일정 확정 요청")
+- cautions: 1~2개, 놓치면 안 될 리스크·민감 사항"""
+
+    user_prompt = f"""고객사: {company_name}
+미팅 제목: {meeting_title}
+미팅 시각: {meeting_time}
+
+【최근 미팅 요약 (최근 5건)】
+{meetings_text}
+
+【미결 액션 아이템】
+{actions_text}
+
+【미확인 약속사항】
+{promises_text}
+
+【최근 월간 인사이트 요약】
+{insight_text}
+
+위 내용을 바탕으로 미팅 준비 브리핑을 JSON으로 출력하세요."""
+
+    api_key = _get_api_key()
+    if not api_key:
+        raise ValueError("OPENAI_API_KEY가 설정되지 않았습니다.")
+    client = OpenAI(api_key=api_key)
+    response = client.chat.completions.create(
+        model="gpt-4.1",
+        messages=[
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_prompt},
+        ],
+        temperature=0.3,
+        max_tokens=600,
+        response_format={"type": "json_object"},
+    )
+    raw = response.choices[0].message.content.strip()
+    if "```" in raw:
+        m = re.search(r"```(?:json)?\s*([\s\S]+?)\s*```", raw)
+        if m:
+            raw = m.group(1)
+    return json.loads(raw)

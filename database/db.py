@@ -57,3 +57,11 @@ def _ensure_meeting_analysis_columns() -> None:
         for column_name, column_type in required_columns.items():
             if column_name not in existing:
                 conn.exec_driver_sql(f"ALTER TABLE meeting_analyses ADD COLUMN {column_name} {column_type}")
+    # schedules 마이그레이션
+    with _engine.begin() as conn:
+        sch_existing = {
+            row[1]
+            for row in conn.exec_driver_sql("PRAGMA table_info(schedules)").fetchall()
+        }
+        if "briefing_sent" not in sch_existing:
+            conn.exec_driver_sql("ALTER TABLE schedules ADD COLUMN briefing_sent BOOLEAN DEFAULT 0")
