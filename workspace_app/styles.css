@@ -696,6 +696,65 @@ textarea { min-height: 72px; resize: vertical; }
   white-space: nowrap;
 }
 
+/* ── 고객 정보 파악 시점 배지 ── */
+.info-detected-badge {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 1px 6px;
+  font-size: 11px;
+  border-radius: 99px;
+  background: #e8f5e9;
+  color: #2e7d32;
+  font-weight: 600;
+  vertical-align: middle;
+}
+
+/* ── 월간 인사이트 패널 ── */
+.monthly-insight-panel { margin-top: 8px; }
+.insight-card {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 14px 16px;
+  margin-bottom: 10px;
+  background: var(--card-bg);
+}
+.insight-card-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+.insight-ym {
+  font-weight: 800;
+  font-size: 15px;
+  color: var(--text);
+}
+.insight-stage-badge {
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: 99px;
+  background: var(--accent-light);
+  color: var(--accent);
+  font-weight: 700;
+}
+.insight-gen-btn {
+  margin-left: auto;
+  font-size: 12px;
+  padding: 3px 10px;
+}
+.insight-summary { font-size: 13px; color: var(--text); line-height: 1.6; margin-bottom: 8px; }
+.insight-tags { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 6px; }
+.insight-tag {
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: 99px;
+  background: #f3f4f6;
+  color: #374151;
+  font-weight: 600;
+}
+.insight-scores { display: flex; gap: 12px; font-size: 12px; color: var(--muted); }
+.insight-score-item strong { color: var(--text); font-weight: 700; }
+
 .hist-risk { font-weight: 700; font-size: 13px; }
 
 @media (max-width: 768px) {

@@ -67,6 +67,12 @@ function showToast(msg, duration = 1800) {
   return el;
 }
 
+function dismissToast(el) {
+  if (!el) return;
+  el.classList.remove("toast-show");
+  setTimeout(() => el.remove(), 300);
+}
+
 function markdownToHtml(md) {
   let html = escapeHtml(md);
   // ## 제목
@@ -692,6 +698,64 @@ function renderCompanyHistory(c) {
     </div>`;
 }
 
+function renderMonthlyInsights(c) {
+  const insights = c.monthly_insights || [];
+  const companyId = c.id;
+  const now = new Date();
+  const currentYM = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+
+  const genBtn = `<button class="small-primary insight-gen-btn" data-insight-gen="${companyId}" data-insight-ym="${currentYM}">AI 분석</button>`;
+
+  if (!insights.length) {
+    return `
+    <div class="detail-section">
+      <div class="panel-head"><h3>월간 인사이트</h3>${genBtn}</div>
+      <p class="empty">인사이트가 없습니다. AI 분석 버튼으로 생성하세요.</p>
+    </div>`;
+  }
+
+  const cards = insights.map(ins => {
+    const risks = (ins.risks || []).map(r =>
+      `<span class="insight-tag" style="background:${r.level==="HIGH"?"#fee2e2":r.level==="MED"?"#fef3c7":"#f3f4f6"};color:${r.level==="HIGH"?"#991b1b":r.level==="MED"?"#92400e":"#374151"}">${escapeHtml(r.risk || "")}</span>`
+    ).join("");
+    const opps = (ins.opportunities || []).map(o =>
+      `<span class="insight-tag" style="background:#e0f2fe;color:#0369a1">${escapeHtml(o.action || "")}</span>`
+    ).join("");
+    const actions = (ins.recommended_actions || []).map(a =>
+      `<li>${escapeHtml(a.action || "")}${a.deadline ? ` <em>(${escapeHtml(a.deadline)})</em>` : ""}</li>`
+    ).join("");
+    const scoreText = [
+      ins.relationship_score != null ? `관계 <strong>${ins.relationship_score}</strong>` : null,
+      ins.deal_probability != null ? `딜 가능성 <strong>${ins.deal_probability}%</strong>` : null,
+    ].filter(Boolean).join(" · ");
+
+    const isCurrentMonth = ins.year_month === currentYM;
+    const regenBtn = isCurrentMonth
+      ? `<button class="small-primary insight-gen-btn" style="margin-left:auto;font-size:11px;padding:2px 8px" data-insight-gen="${companyId}" data-insight-ym="${ins.year_month}">재분석</button>`
+      : "";
+
+    return `
+    <div class="insight-card">
+      <div class="insight-card-head">
+        <span class="insight-ym">${ins.year_month}</span>
+        ${regenBtn}
+      </div>
+      <p class="insight-summary">${escapeHtml(ins.summary || "")}</p>
+      ${(ins.key_trends || []).length ? `<div class="insight-tags">${ins.key_trends.map(t => `<span class="insight-tag">${escapeHtml(t)}</span>`).join("")}</div>` : ""}
+      ${risks ? `<div class="insight-tags">${risks}</div>` : ""}
+      ${opps ? `<div class="insight-tags">${opps}</div>` : ""}
+      ${actions ? `<ul style="font-size:12px;color:var(--text);padding-left:16px;margin:6px 0">${actions}</ul>` : ""}
+      ${scoreText ? `<div class="insight-scores">${scoreText}</div>` : ""}
+    </div>`;
+  }).join("");
+
+  return `
+  <div class="detail-section monthly-insight-panel">
+    <div class="panel-head"><h3>월간 인사이트</h3>${genBtn}</div>
+    ${cards}
+  </div>`;
+}
+
 function renderCompanyDetail(c) {
   return `
     <div class="detail-head">
@@ -720,7 +784,11 @@ function renderCompanyDetail(c) {
       <div id="infoFormSlot"></div>
       ${(c.customer_infos || []).map(row => `
         <div class="mini-row">
-          <div><strong>[${escapeHtml(row.category || "기타")}] ${escapeHtml(row.key)}</strong><span>${escapeHtml(row.value)} ${row.contact_name ? " · " + escapeHtml(row.contact_name) : ""}</span></div>
+          <div>
+            <strong>[${escapeHtml(row.category || "기타")}] ${escapeHtml(row.key)}</strong>
+            ${row.detected_at ? `<span class="info-detected-badge">📅 ${row.detected_at} 파악</span>` : ""}
+            <span>${escapeHtml(row.value)} ${row.contact_name ? " · " + escapeHtml(row.contact_name) : ""}</span>
+          </div>
           <div class="row-actions"><button data-info-edit="${row.id}">수정</button><button class="danger-btn" data-info-delete="${row.id}">삭제</button></div>
         </div>
       `).join("") || `<p class="empty">고객 정보가 없습니다.</p>`}
@@ -728,6 +796,7 @@ function renderCompanyDetail(c) {
     ${renderSalesSignals(c)}
     ${renderIssueSummary(c)}
     ${renderCompanyHistory(c)}
+    ${renderMonthlyInsights(c)}
     <div class="detail-section">
       <h3>최근 미팅</h3>
       ${(c.recent_meetings || []).map(row => `<div class="mini-row"><div><strong>${escapeHtml(row.date)}</strong><span>${escapeHtml(row.summary || "-")}</span></div></div>`).join("") || `<p class="empty">최근 미팅이 없습니다.</p>`}
@@ -1310,6 +1379,20 @@ function bindEvents() {
     if (infoDelete && confirm("이 고객 정보를 삭제할까요?")) {
       await api(`/api/workspace/customer-infos/${infoDelete}`, { method: "DELETE" });
       await openCompany(state.selectedCompany.id);
+    }
+    const insightGen = target.dataset.insightGen;
+    if (insightGen) {
+      const ym = target.dataset.insightYm || "";
+      const toastId = showToast("월간 인사이트 생성 중...", 0);
+      try {
+        await api(`/api/workspace/monthly-insight/${insightGen}?year_month=${ym}`, { method: "POST" });
+        dismissToast(toastId);
+        showToast("✅ 월간 인사이트 생성 완료");
+        await openCompany(Number(insightGen));
+      } catch (e) {
+        dismissToast(toastId);
+        showToast("❌ 인사이트 생성 실패: " + (e.message || ""));
+      }
     }
     const candidateIgnore = target.dataset.candidateIgnore;
     if (candidateIgnore) {

@@ -30,8 +30,8 @@ from sqlalchemy.orm.attributes import flag_modified
 load_dotenv()
 
 from database.db import SessionLocal, create_database
-from database.models import ActionItem, Company, CompanyHistory, Contact, CustomerInfo, IssueTag, MeetingAnalysis, MeetingRecord, Promise, SalesSignal, Schedule
-from services.ai_analyzer import analyze_meeting_transcript
+from database.models import ActionItem, Company, CompanyHistory, Contact, CustomerInfo, IssueTag, MeetingAnalysis, MeetingRecord, MonthlyInsight, Promise, SalesSignal, Schedule
+from services.ai_analyzer import analyze_meeting_transcript, generate_monthly_insight
 
 
 APP_DIR = Path(__file__).parent
@@ -306,6 +306,7 @@ def workspace_company_detail(company_id: int, db: Session = Depends(get_db)):
             joinedload(Company.issue_tags),
             joinedload(Company.history),
             joinedload(Company.sales_signals),
+            joinedload(Company.monthly_insights),
         )
         .filter(Company.id == company_id)
         .first()
@@ -376,6 +377,106 @@ def hot_companies(limit: int = 10, db: Session = Depends(get_db)):
             "top_signals": top_signals,
         })
     return result
+
+
+@app.post("/api/workspace/monthly-insight/{company_id}", dependencies=[Depends(_require_auth)])
+def generate_company_monthly_insight(company_id: int, db: Session = Depends(get_db), year_month: str | None = None):
+    """특정 고객사의 월간 인사이트를 GPT로 생성/갱신."""
+    from datetime import date as _date
+    ym = year_month or _now_kst().strftime("%Y-%m")
+
+    company = db.get(Company, company_id)
+    if not company:
+        raise HTTPException(status_code=404, detail="Company not found")
+
+    # 해당 월 미팅 요약 수집
+    year, month = int(ym[:4]), int(ym[5:7])
+    from sqlalchemy import extract
+    month_meetings = (
+        db.query(MeetingRecord)
+        .options(joinedload(MeetingRecord.analysis))
+        .filter(
+            MeetingRecord.company_id == company_id,
+            extract("year", MeetingRecord.meeting_date) == year,
+            extract("month", MeetingRecord.meeting_date) == month,
+        )
+        .all()
+    )
+    meeting_summaries = [
+        {
+            "date": str(m.meeting_date) if m.meeting_date else "",
+            "summary": (m.analysis.one_line_summary or "") if m.analysis else "",
+        }
+        for m in month_meetings
+    ]
+
+    # CompanyHistory 지표
+    history_row = db.query(CompanyHistory).filter(
+        CompanyHistory.company_id == company_id,
+        CompanyHistory.year_month == ym,
+    ).first()
+    history_dict = None
+    if history_row:
+        history_dict = {
+            "trust_score_avg": history_row.trust_score_avg,
+            "risk_score_avg": history_row.risk_score_avg,
+            "meeting_count": history_row.meeting_count,
+            "sales_stage": history_row.sales_stage,
+        }
+
+    # 이전 인사이트 (최근 3개월)
+    prev_insights_rows = (
+        db.query(MonthlyInsight)
+        .filter(
+            MonthlyInsight.company_id == company_id,
+            MonthlyInsight.year_month < ym,
+        )
+        .order_by(MonthlyInsight.year_month.desc())
+        .limit(3)
+        .all()
+    )
+    prev_insights = [
+        {"year_month": p.year_month, "summary": p.summary or ""}
+        for p in prev_insights_rows
+    ]
+
+    result = generate_monthly_insight(
+        company_name=company.name,
+        year_month=ym,
+        meeting_summaries=meeting_summaries,
+        company_history=history_dict,
+        prev_insights=prev_insights,
+    )
+
+    # upsert
+    existing = db.query(MonthlyInsight).filter(
+        MonthlyInsight.company_id == company_id,
+        MonthlyInsight.year_month == ym,
+    ).first()
+    if existing:
+        existing.summary = result.get("summary")
+        existing.key_trends = result.get("key_trends", [])
+        existing.risks = result.get("risks", [])
+        existing.opportunities = result.get("opportunities", [])
+        existing.recommended_actions = result.get("recommended_actions", [])
+        existing.relationship_score = result.get("relationship_score")
+        existing.deal_probability = result.get("deal_probability")
+        existing.updated_at = _now_kst()
+    else:
+        db.add(MonthlyInsight(
+            company_id=company_id,
+            year_month=ym,
+            summary=result.get("summary"),
+            key_trends=result.get("key_trends", []),
+            risks=result.get("risks", []),
+            opportunities=result.get("opportunities", []),
+            recommended_actions=result.get("recommended_actions", []),
+            relationship_score=result.get("relationship_score"),
+            deal_probability=result.get("deal_probability"),
+        ))
+    db.commit()
+
+    return {"ok": True, "year_month": ym, "result": result}
 
 
 @app.delete("/api/workspace/companies/{company_id}", dependencies=[Depends(_require_auth)])
@@ -550,6 +651,8 @@ def _customer_info_to_dict(info: CustomerInfo) -> dict:
         "value": info.value,
         "importance": info.importance or "",
         "notes": info.notes or "",
+        "meeting_id": info.meeting_id,
+        "detected_at": info.detected_at.isoformat() if info.detected_at else None,
     }
 
 
@@ -629,6 +732,23 @@ def _company_to_dict(c: Company, detail: bool = False) -> dict:
                 "meeting_count": h.meeting_count or 0,
             }
             for h in history[-12:]  # 최근 12개월
+        ]
+        # 월간 인사이트
+        insights = sorted(getattr(c, "monthly_insights", []) or [], key=lambda x: x.year_month, reverse=True)
+        data["monthly_insights"] = [
+            {
+                "id": ins.id,
+                "year_month": ins.year_month,
+                "summary": ins.summary or "",
+                "key_trends": ins.key_trends or [],
+                "risks": ins.risks or [],
+                "opportunities": ins.opportunities or [],
+                "recommended_actions": ins.recommended_actions or [],
+                "relationship_score": ins.relationship_score,
+                "deal_probability": ins.deal_probability,
+                "updated_at": ins.updated_at.isoformat() if ins.updated_at else None,
+            }
+            for ins in insights[:6]  # 최근 6개월
         ]
     return data
 
@@ -886,6 +1006,41 @@ def _upsert_issue_tags(db: Session, record: MeetingRecord, result: dict) -> None
                 ))
 
 
+def _upsert_relationship_notes(db: Session, record: MeetingRecord, result: dict) -> None:
+    """AI 분석 결과의 relationship_notes를 CustomerInfo에 자동 저장."""
+    notes = result.get("relationship_notes") or []
+    if not notes:
+        return
+    detected = record.meeting_date  # date 객체
+    for item in notes:
+        key = (item.get("key") or "").strip()
+        value = (item.get("value") or "").strip()
+        category = (item.get("category") or "기타").strip()
+        if not key or not value:
+            continue
+        # 동일 company + key 가 이미 있으면 건드리지 않음 (최초 파악 시점 보존)
+        existing = (
+            db.query(CustomerInfo)
+            .filter(
+                CustomerInfo.company_id == record.company_id,
+                CustomerInfo.key == key,
+            )
+            .first()
+        )
+        if existing:
+            continue
+        db.add(CustomerInfo(
+            company_id=record.company_id,
+            category=category,
+            key=key,
+            value=value,
+            importance=item.get("importance", "보통"),
+            notes=item.get("notes", ""),
+            meeting_id=record.id,
+            detected_at=detected,
+        ))
+
+
 def _upsert_company_history(db: Session, record: MeetingRecord, result: dict) -> None:
     """회의록 분석 결과로 해당 월 CompanyHistory 스냅샷 갱신."""
     if not record.company_id:
@@ -949,6 +1104,7 @@ def _save_meeting_analysis(db: Session, record: MeetingRecord, result: dict) -> 
     _upsert_sales_signals(db, record, result)
     _upsert_issue_tags(db, record, result)
     _upsert_company_history(db, record, result)
+    _upsert_relationship_notes(db, record, result)
     db.commit()
 
 
@@ -1019,6 +1175,7 @@ def _analyze_record(db: Session, record: MeetingRecord, *, schedule_only: bool =
             _upsert_sales_signals(db, record, result)
             _upsert_issue_tags(db, record, result)
             _upsert_company_history(db, record, result)
+            _upsert_relationship_notes(db, record, result)
         db.commit()
     else:
         _save_meeting_analysis(db, record, result)

@@ -87,10 +87,13 @@ class CustomerInfo(Base):
     value = Column(Text)                     # 내용
     importance = Column(String(20), default="보통")  # 높음/보통/낮음
     notes = Column(Text)
+    meeting_id = Column(Integer, ForeignKey("meeting_records.id"), nullable=True)
+    detected_at = Column(Date, nullable=True)        # 최초 파악 날짜
     created_at = Column(DateTime, default=datetime.now)
 
     company = relationship("Company", back_populates="customer_infos")
     contact = relationship("Contact", back_populates="customer_infos")
+    meeting = relationship("MeetingRecord", backref="relationship_infos")
 
 
 class MeetingRecord(Base):
@@ -198,6 +201,26 @@ class SalesSignal(Base):
 
     company = relationship("Company", backref="sales_signals")
     meeting = relationship("MeetingRecord", backref="sales_signals")
+
+
+class MonthlyInsight(Base):
+    """고객사 월간 AI 인사이트 — 트렌드 분석 및 전략 제언"""
+    __tablename__ = "monthly_insights"
+
+    id = Column(Integer, primary_key=True)
+    company_id = Column(Integer, ForeignKey("companies.id"), nullable=False)
+    year_month = Column(String(7), nullable=False)       # "2026-06"
+    summary = Column(Text)                               # 한 줄 총평
+    key_trends = Column(JSON)                            # ["트렌드1", "트렌드2"]
+    risks = Column(JSON)                                 # [{"risk": "...", "level": "HIGH"}]
+    opportunities = Column(JSON)                         # [{"action": "...", "priority": "HIGH"}]
+    recommended_actions = Column(JSON)                   # [{"action": "...", "deadline": "YYYY-MM"}]
+    relationship_score = Column(Integer)                 # 0-100 종합 관계 점수
+    deal_probability = Column(Integer)                   # 0-100 딜 성사 가능성
+    created_at = Column(DateTime, default=datetime.now)
+    updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
+
+    company = relationship("Company", backref="monthly_insights")
 
 
 class Promise(Base):

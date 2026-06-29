@@ -40,6 +40,15 @@ def _ensure_meeting_analysis_columns() -> None:
         "analyzed_at": "DATETIME",
         "meeting_mood": "JSON",
     }
+    # customer_infos 마이그레이션
+    with _engine.begin() as conn:
+        ci_existing = {
+            row[1]
+            for row in conn.exec_driver_sql("PRAGMA table_info(customer_infos)").fetchall()
+        }
+        for col, typ in [("meeting_id", "INTEGER"), ("detected_at", "DATE")]:
+            if col not in ci_existing:
+                conn.exec_driver_sql(f"ALTER TABLE customer_infos ADD COLUMN {col} {typ}")
     with _engine.begin() as conn:
         existing = {
             row[1]

@@ -261,3 +261,88 @@ def analyze_meeting_transcript(transcript: str, prev_meetings: list | None = Non
             raw = m.group(1)
 
     return json.loads(raw)
+
+
+def generate_monthly_insight(
+    company_name: str,
+    year_month: str,
+    meeting_summaries: list[dict],
+    company_history: dict | None = None,
+    prev_insights: list[dict] | None = None,
+) -> dict:
+    """특정 고객사의 월간 인사이트를 GPT-4.1로 생성."""
+    meetings_text = "\n\n".join(
+        f"[{m.get('date', '')}] {m.get('summary', '')}"
+        for m in meeting_summaries
+    ) or "해당 월 미팅 없음"
+
+    history_text = ""
+    if company_history:
+        history_text = (
+            f"신뢰지수 평균: {company_history.get('trust_score_avg', '-')}, "
+            f"리스크 평균: {company_history.get('risk_score_avg', '-')}, "
+            f"미팅수: {company_history.get('meeting_count', 0)}, "
+            f"영업단계: {company_history.get('sales_stage', '-')}"
+        )
+
+    prev_text = ""
+    if prev_insights:
+        prev_text = "\n".join(
+            f"- {p.get('year_month')}: {p.get('summary', '')}"
+            for p in prev_insights[:3]
+        )
+
+    system_prompt = """당신은 B2B 영업 전략 분석 전문가입니다.
+주어진 고객사 미팅 데이터를 바탕으로 월간 인사이트를 JSON으로 생성하세요.
+
+출력 형식:
+{
+  "summary": "이 달 전반적인 한 줄 총평 (50자 이내)",
+  "key_trends": ["트렌드1", "트렌드2", ...],
+  "risks": [{"risk": "리스크 내용", "level": "HIGH|MED|LOW"}],
+  "opportunities": [{"action": "기회/액션", "priority": "HIGH|MED|LOW"}],
+  "recommended_actions": [{"action": "권장 행동", "deadline": "YYYY-MM 또는 단기/중기"}],
+  "relationship_score": 0~100,
+  "deal_probability": 0~100
+}
+
+규칙:
+- key_trends: 2~4개, 이 달 두드러진 변화나 패턴
+- risks: 0~3개, 놓치면 안 되는 위험 요소
+- opportunities: 1~3개, 즉시 활용 가능한 기회
+- recommended_actions: 1~3개, 다음 달 전에 해야 할 것
+- relationship_score: 신뢰·친밀도 종합 (미팅 없으면 null)
+- deal_probability: 수주 가능성 추정 (명확한 근거 없으면 null)
+"""
+
+    user_prompt = f"""고객사: {company_name}
+분석 대상 월: {year_month}
+
+【이달 미팅 요약】
+{meetings_text}
+
+【이달 영업 히스토리 지표】
+{history_text or "없음"}
+
+【이전 월 인사이트 (최근 3개월)】
+{prev_text or "없음"}
+
+위 정보를 바탕으로 {year_month} 월간 인사이트를 JSON으로 출력하세요."""
+
+    response = client.chat.completions.create(
+        model="gpt-4.1",
+        messages=[
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_prompt},
+        ],
+        temperature=0.3,
+        max_tokens=2000,
+        response_format={"type": "json_object"},
+    )
+
+    raw = response.choices[0].message.content.strip()
+    if "```" in raw:
+        m = re.search(r"```(?:json)?\s*([\s\S]+?)\s*```", raw)
+        if m:
+            raw = m.group(1)
+    return json.loads(raw)
