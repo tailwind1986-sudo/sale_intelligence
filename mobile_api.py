@@ -33,7 +33,7 @@ from sqlalchemy.orm.attributes import flag_modified
 load_dotenv()
 
 from database.db import SessionLocal, create_database
-from database.models import ActionItem, Company, CompanyHistory, Contact, CustomerInfo, IssueTag, MeetingAnalysis, MeetingRecord, MonthlyInsight, Promise, SalesSignal, Schedule
+from database.models import ActionItem, Company, CompanyHistory, Contact, CustomerInfo, IssueTag, MeetingAnalysis, MeetingRecord, MonthlyInsight, MonthlyReport, Promise, SalesSignal, Schedule
 from services.ai_analyzer import analyze_meeting_transcript, generate_monthly_insight, generate_monthly_insight_for_company
 
 
@@ -2128,18 +2128,28 @@ def delete_schedule(schedule_id: int, db: Session = Depends(get_db)):
 
 @app.get("/api/workspace/monthly-report", dependencies=[Depends(_require_auth)])
 def get_monthly_report(year_month: str | None = None, db: Session = Depends(get_db)):
-    """전사 월간 리포트 데이터 반환 (UI용)"""
+    """저장된 월간 리포트 반환. 없으면 cached=false 반환 (GPT 호출 없음)."""
+    ym = year_month or (_now_kst().replace(day=1) - timedelta(days=1)).strftime("%Y-%m")
+    cached = db.query(MonthlyReport).filter(MonthlyReport.year_month == ym).first()
+    if cached:
+        return {"cached": True, **cached.to_dict()}
+    return {"cached": False, "year_month": ym}
+
+
+@app.post("/api/workspace/monthly-report/generate", dependencies=[Depends(_require_auth)])
+def generate_monthly_report(year_month: str | None = None, db: Session = Depends(get_db)):
+    """월간 리포트 GPT 재생성 후 DB 저장"""
     from services.telegram_service import build_monthly_report_data
     try:
         data = build_monthly_report_data(db, year_month)
-        return data
+        return {"cached": False, **data}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"{type(e).__name__}: {e}")
 
 
 @app.post("/api/workspace/monthly-report/send", dependencies=[Depends(_require_auth)])
 def send_monthly_report_now(year_month: str | None = None, db: Session = Depends(get_db)):
-    """수동으로 월간 리포트 텔레그램 전송"""
+    """수동으로 월간 리포트 텔레그램 전송 (캐시 우선, 없으면 생성)"""
     from services.telegram_service import send_monthly_report
     try:
         ok = send_monthly_report(db, year_month)

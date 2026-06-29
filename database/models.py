@@ -223,6 +223,41 @@ class MonthlyInsight(Base):
     company = relationship("Company", backref="monthly_insights")
 
 
+class MonthlyReport(Base):
+    """전사 월간 리포트 캐시 — 재조회 시 GPT 재호출 없이 반환"""
+    __tablename__ = "monthly_reports"
+
+    id = Column(Integer, primary_key=True)
+    year_month = Column(String(7), nullable=False, unique=True)  # "2026-06"
+    total_companies = Column(Integer, default=0)
+    total_meetings = Column(Integer, default=0)
+    overall_summary = Column(Text)
+    next_month_actions = Column(JSON)       # [str, ...]
+    hot_companies = Column(JSON)            # [{name, deal_prob, rel_score, signal}]
+    signal_companies = Column(JSON)         # [{name, signals}]
+    stagnant_companies = Column(JSON)       # [{name, days_since}]
+    risk_companies = Column(JSON)           # [{name, reason, deal_prob}]
+    top_issues = Column(JSON)               # [{tag, count}]
+    failed_companies = Column(JSON)         # [{name, error}]
+    generated_at = Column(DateTime, default=datetime.now)
+
+    def to_dict(self):
+        return {
+            "year_month": self.year_month,
+            "total_companies": self.total_companies,
+            "total_meetings": self.total_meetings,
+            "overall_summary": self.overall_summary or "",
+            "next_month_actions": self.next_month_actions or [],
+            "hot_companies": self.hot_companies or [],
+            "signal_companies": self.signal_companies or [],
+            "stagnant_companies": self.stagnant_companies or [],
+            "risk_companies": self.risk_companies or [],
+            "top_issues": self.top_issues or [],
+            "failed_companies": self.failed_companies or [],
+            "generated_at": self.generated_at.isoformat() if self.generated_at else None,
+        }
+
+
 class Promise(Base):
     __tablename__ = "promises"
 

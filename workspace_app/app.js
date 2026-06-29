@@ -1316,19 +1316,42 @@ function initMonthlyReport() {
 async function loadMonthlyReport() {
   const ym = $("reportYmSelect").value;
   const body = $("monthlyReportBody");
-  body.innerHTML = `<p class="empty">리포트 생성 중… (GPT 분석 포함, 1~2분 소요)</p>`;
+  body.innerHTML = `<p class="empty">불러오는 중…</p>`;
   const data = await api(`/api/workspace/monthly-report?year_month=${ym}`);
   if (!data) { body.innerHTML = `<p class="error">불러오기 실패</p>`; return; }
+  if (!data.cached) {
+    body.innerHTML = `<p class="empty">저장된 리포트가 없습니다. <button class="small-primary" onclick="generateMonthlyReport()">지금 생성</button></p>`;
+    return;
+  }
   body.innerHTML = renderMonthlyReportView(data);
 }
 
+async function generateMonthlyReport() {
+  const ym = $("reportYmSelect").value;
+  const body = $("monthlyReportBody");
+  const btn = $("reportGenerateBtn");
+  if (btn) { btn.disabled = true; btn.textContent = "생성 중…"; }
+  body.innerHTML = `<p class="empty">GPT 분석 중… (1~2분 소요)</p>`;
+  try {
+    const data = await api(`/api/workspace/monthly-report/generate?year_month=${ym}`, { method: "POST" });
+    if (!data) { body.innerHTML = `<p class="error">생성 실패</p>`; return; }
+    body.innerHTML = renderMonthlyReportView(data);
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = "재생성"; }
+  }
+}
+
 function renderMonthlyReportView(d) {
+  const totalMeetings = d.stats?.total_meetings ?? d.total_meetings ?? 0;
+  const totalCompanies = d.stats?.active_companies ?? d.total_companies ?? 0;
+  const generatedAt = d.generated_at ? escapeHtml(String(d.generated_at).slice(0, 16).replace("T", " ")) : "-";
+  const issueList = d.issue_summary || d.top_issues || [];
   const statBar = `
     <div class="report-stat-bar">
       <span>📅 ${escapeHtml(d.year_month)}</span>
-      <span>총 미팅 <strong>${d.stats.total_meetings}건</strong></span>
-      <span>접촉 고객사 <strong>${d.stats.active_companies}개사</strong></span>
-      <span class="muted">생성: ${escapeHtml(d.generated_at)} KST</span>
+      <span>총 미팅 <strong>${totalMeetings}건</strong></span>
+      <span>접촉 고객사 <strong>${totalCompanies}개사</strong></span>
+      <span class="muted" style="font-size:11px">생성: ${generatedAt} KST</span>
     </div>`;
 
   const summary = d.overall_summary ? `
@@ -1353,7 +1376,7 @@ function renderMonthlyReportView(d) {
     `<div class="report-row"><span>${escapeHtml(s.name)}</span><span class="hot-score-badge">🔥 ${s.score}점</span></div>`
   ).join("");
 
-  const issueHtml = (d.issue_summary || []).map(iss =>
+  const issueHtml = issueList.map(iss =>
     `<div class="report-row"><span>${escapeHtml(iss.tag)}</span><span class="muted">${iss.count}건</span></div>`
   ).join("");
 
@@ -1526,6 +1549,7 @@ function bindEvents() {
   };
   $("riskCompany").onchange = loadRisk;
   $("reportLoadBtn").onclick = loadMonthlyReport;
+  $("reportGenerateBtn").onclick = generateMonthlyReport;
   $("reportSendBtn").onclick = async () => {
     const ym = $("reportYmSelect").value;
     if (!ym) return;

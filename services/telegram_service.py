@@ -772,7 +772,7 @@ def build_monthly_report_data(db, year_month: str | None = None) -> dict:
     except Exception as e:
         gpt_result["overall_summary"] = f"(총평 생성 오류: {e})"
 
-    return {
+    result = {
         "year_month": year_month,
         "generated_at": now.strftime("%Y-%m-%d %H:%M"),
         "stats": {"total_meetings": total_meetings, "active_companies": len(companies_with_meetings)},
@@ -786,6 +786,43 @@ def build_monthly_report_data(db, year_month: str | None = None) -> dict:
         "generated_companies": generated,
         "failed_companies": failed,
     }
+
+    # DB에 캐시 저장 (upsert)
+    try:
+        from database.models import MonthlyReport
+        existing = db.query(MonthlyReport).filter(MonthlyReport.year_month == year_month).first()
+        if existing:
+            existing.total_companies = len(companies_with_meetings)
+            existing.total_meetings = total_meetings
+            existing.overall_summary = gpt_result["overall_summary"]
+            existing.next_month_actions = gpt_result["next_month_actions"]
+            existing.hot_companies = hot_list
+            existing.signal_companies = signal_list
+            existing.stagnant_companies = stagnant_list
+            existing.risk_companies = risk_list
+            existing.top_issues = issue_list
+            existing.failed_companies = failed
+            existing.generated_at = now
+        else:
+            db.add(MonthlyReport(
+                year_month=year_month,
+                total_companies=len(companies_with_meetings),
+                total_meetings=total_meetings,
+                overall_summary=gpt_result["overall_summary"],
+                next_month_actions=gpt_result["next_month_actions"],
+                hot_companies=hot_list,
+                signal_companies=signal_list,
+                stagnant_companies=stagnant_list,
+                risk_companies=risk_list,
+                top_issues=issue_list,
+                failed_companies=failed,
+                generated_at=now,
+            ))
+        db.commit()
+    except Exception as e:
+        print(f"MonthlyReport cache save failed: {e}")
+
+    return result
 
 
 def send_monthly_report(db, year_month: str | None = None) -> bool:

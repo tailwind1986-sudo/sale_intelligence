@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <meta name="theme-color" content="#ffffff" />
   <title>Sales Workspace</title>
-  <link rel="stylesheet" href="/mobile/workspace/static/styles.css?v=20260629-report3" />
+  <link rel="stylesheet" href="/mobile/workspace/static/styles.css?v=20260629-report4" />
 </head>
 <body>
   <section id="workspaceLogin" class="workspace-login hidden">
@@ -325,9 +325,10 @@
           <section class="panel">
             <div class="panel-head">
               <h2>월간 영업 리포트</h2>
-              <div style="display:flex;gap:8px;align-items:center">
+              <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
                 <select id="reportYmSelect" style="font-size:13px;padding:4px 8px;border:1px solid var(--border);border-radius:6px;background:var(--card-bg);color:var(--text)"></select>
                 <button id="reportLoadBtn" class="small-primary">조회</button>
+                <button id="reportGenerateBtn">재생성</button>
                 <button id="reportSendBtn">텔레그램 전송</button>
               </div>
             </div>
@@ -345,6 +346,6 @@
     </div>
   </div>
 
-  <script src="/mobile/workspace/static/app.js?v=20260629-report3"></script>
+  <script src="/mobile/workspace/static/app.js?v=20260629-report4"></script>
 </body>
 </html>
