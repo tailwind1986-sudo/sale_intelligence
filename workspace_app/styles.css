@@ -532,6 +532,88 @@ textarea { min-height: 72px; resize: vertical; }
 .full-report-body li { margin-bottom: 3px; }
 .full-report-body p { margin: 6px 0; }
 
+/* ── 영업 신호 ── */
+.signal-list { display: flex; flex-direction: column; gap: 6px; }
+
+.signal-row {
+  display: grid;
+  grid-template-columns: 28px 1fr auto;
+  gap: 8px;
+  align-items: start;
+  padding: 9px 10px;
+  border-radius: 8px;
+  border-left: 3px solid transparent;
+}
+
+.signal-row.sig-high { background: #fff7ed; border-left-color: #ea580c; }
+.signal-row.sig-med  { background: #eff6ff; border-left-color: var(--blue); }
+.signal-row.sig-low  { background: #f9fafb; border-left-color: var(--line); }
+
+.signal-icon { font-size: 16px; line-height: 1.4; }
+
+.signal-body { min-width: 0; }
+.signal-body strong { display: block; font-size: 13px; font-weight: 700; }
+.signal-body span   { display: block; margin-top: 2px; font-size: 12px; color: var(--muted); line-height: 1.35; }
+
+.signal-meta { display: flex; flex-direction: column; align-items: flex-end; gap: 3px; white-space: nowrap; }
+
+.signal-strength {
+  font-size: 10px;
+  font-weight: 800;
+  padding: 1px 6px;
+  border-radius: 99px;
+  letter-spacing: 0.04em;
+}
+.sig-high .signal-strength { background: #fed7aa; color: #9a3412; }
+.sig-med  .signal-strength { background: #dbeafe; color: #1e40af; }
+.sig-low  .signal-strength { background: #f3f4f6; color: #6b7280; }
+
+.signal-meta time { font-size: 11px; color: var(--muted); }
+
+.hot-score-badge {
+  font-size: 12px;
+  font-weight: 700;
+  padding: 2px 10px;
+  border-radius: 99px;
+  background: #fff7ed;
+  color: #ea580c;
+}
+
+/* ── HOT 고객 (대시보드) ── */
+.hot-company-row {
+  display: grid;
+  grid-template-columns: 1fr auto auto;
+  gap: 10px;
+  align-items: center;
+  padding: 10px 0;
+  border-top: 1px solid #f0f0f0;
+  transition: background 0.1s;
+}
+.hot-company-row:first-child { border-top: 0; padding-top: 0; }
+.hot-company-row:hover { background: var(--accent-light); border-radius: 8px; padding-left: 6px; }
+
+.hot-main strong { display: block; font-size: 14px; font-weight: 700; }
+.hot-main span   { display: block; font-size: 12px; color: var(--muted); margin-top: 2px; }
+
+.hot-signals { display: flex; gap: 5px; flex-wrap: wrap; }
+
+.hot-signal-chip {
+  font-size: 11px;
+  padding: 2px 7px;
+  border-radius: 99px;
+  background: #fff7ed;
+  color: #c2410c;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.hot-score {
+  font-size: 13px;
+  font-weight: 800;
+  color: #ea580c;
+  white-space: nowrap;
+}
+
 /* ── 이슈 태그 & 히스토리 ── */
 .issue-tag-row {
   display: flex;

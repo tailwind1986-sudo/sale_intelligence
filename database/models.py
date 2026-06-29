@@ -182,6 +182,24 @@ class IssueTag(Base):
     meeting = relationship("MeetingRecord", backref="issue_tags")
 
 
+class SalesSignal(Base):
+    """영업 기회 신호 — HOT 고객 탐지용"""
+    __tablename__ = "sales_signals"
+
+    id = Column(Integer, primary_key=True)
+    company_id = Column(Integer, ForeignKey("companies.id"), nullable=False)
+    meeting_id = Column(Integer, ForeignKey("meeting_records.id"), nullable=False)
+    signal_type = Column(String(50), nullable=False)
+    # 대표참석 / 견적요청 / 예산확보 / 데모요청 / 계약논의 / 추가주문 / 긍정반응
+    strength = Column(String(10), default="MED")   # HIGH / MED / LOW
+    content = Column(Text)                          # 원문 근거
+    detected_at = Column(Date)                      # 미팅 날짜
+    created_at = Column(DateTime, default=datetime.now)
+
+    company = relationship("Company", backref="sales_signals")
+    meeting = relationship("MeetingRecord", backref="sales_signals")
+
+
 class Promise(Base):
     __tablename__ = "promises"
 

@@ -30,7 +30,7 @@ from sqlalchemy.orm.attributes import flag_modified
 load_dotenv()
 
 from database.db import SessionLocal, create_database
-from database.models import ActionItem, Company, CompanyHistory, Contact, CustomerInfo, IssueTag, MeetingAnalysis, MeetingRecord, Promise, Schedule
+from database.models import ActionItem, Company, CompanyHistory, Contact, CustomerInfo, IssueTag, MeetingAnalysis, MeetingRecord, Promise, SalesSignal, Schedule
 from services.ai_analyzer import analyze_meeting_transcript
 
 
@@ -305,6 +305,7 @@ def workspace_company_detail(company_id: int, db: Session = Depends(get_db)):
             joinedload(Company.customer_infos).joinedload(CustomerInfo.contact),
             joinedload(Company.issue_tags),
             joinedload(Company.history),
+            joinedload(Company.sales_signals),
         )
         .filter(Company.id == company_id)
         .first()
@@ -334,6 +335,47 @@ def update_company(company_id: int, payload: CompanyPayload, db: Session = Depen
     db.commit()
     db.refresh(row)
     return _company_to_dict(row, detail=True)
+
+
+@app.get("/api/workspace/hot-companies", dependencies=[Depends(_require_auth)])
+def hot_companies(limit: int = 10, db: Session = Depends(get_db)):
+    """최근 90일 영업 신호 기준 HOT 고객사 순위"""
+    from datetime import date as _date
+    today = _date.today()
+    cutoff = today.replace(month=today.month - 3) if today.month > 3 \
+        else today.replace(year=today.year - 1, month=today.month + 9)
+    _w = {"HIGH": 3, "MED": 1, "LOW": 0}
+    signals = (
+        db.query(SalesSignal)
+        .filter(SalesSignal.detected_at >= cutoff)
+        .all()
+    )
+    from collections import defaultdict
+    scores: dict[int, int] = defaultdict(int)
+    sig_map: dict[int, list] = defaultdict(list)
+    for s in signals:
+        scores[s.company_id] += _w.get(s.strength, 0)
+        sig_map[s.company_id].append(s.signal_type)
+    if not scores:
+        return []
+    top_ids = sorted(scores, key=lambda cid: -scores[cid])[:limit]
+    companies = db.query(Company).filter(Company.id.in_(top_ids)).all()
+    company_map = {c.id: c for c in companies}
+    result = []
+    for cid in top_ids:
+        c = company_map.get(cid)
+        if not c:
+            continue
+        from collections import Counter
+        top_signals = [st for st, _ in Counter(sig_map[cid]).most_common(3)]
+        result.append({
+            "id": cid,
+            "name": c.name,
+            "sales_stage": c.sales_stage or "",
+            "hot_score": scores[cid],
+            "top_signals": top_signals,
+        })
+    return result
 
 
 @app.delete("/api/workspace/companies/{company_id}", dependencies=[Depends(_require_auth)])
@@ -540,6 +582,32 @@ def _company_to_dict(c: Company, detail: bool = False) -> dict:
             }
             for m in recent
         ]
+        # 영업 기회 신호 (최근 90일, 최신순)
+        from datetime import date as _date
+        _cutoff = _date.today().replace(day=1)
+        import calendar as _cal
+        _cutoff = (_cutoff.replace(month=_cutoff.month - 3) if _cutoff.month > 3
+                   else _cutoff.replace(year=_cutoff.year - 1, month=_cutoff.month + 9))
+        _strength_order = {"HIGH": 0, "MED": 1, "LOW": 2}
+        signals_raw = sorted(
+            [s for s in (getattr(c, "sales_signals", []) or [])
+             if s.detected_at and s.detected_at >= _cutoff],
+            key=lambda s: (_strength_order.get(s.strength, 9), -(s.detected_at.toordinal() if s.detected_at else 0))
+        )
+        data["sales_signals"] = [
+            {
+                "signal_type": s.signal_type,
+                "strength": s.strength,
+                "content": s.content or "",
+                "detected_at": s.detected_at.isoformat() if s.detected_at else "",
+                "meeting_id": s.meeting_id,
+            }
+            for s in signals_raw[:20]
+        ]
+        # HOT 점수 (HIGH=3, MED=1, LOW=0)
+        _w = {"HIGH": 3, "MED": 1, "LOW": 0}
+        data["hot_score"] = sum(_w.get(s.strength, 0) for s in signals_raw)
+
         # 이슈 태그 집계
         from collections import Counter
         tags = getattr(c, "issue_tags", []) or []
@@ -778,6 +846,28 @@ def _analysis_from_result(record: MeetingRecord, result: dict) -> MeetingAnalysi
     )
 
 
+def _upsert_sales_signals(db: Session, record: MeetingRecord, result: dict) -> None:
+    """회의록 분석 결과에서 SalesSignal 저장 (기존 것 삭제 후 재생성)."""
+    db.query(SalesSignal).filter(SalesSignal.meeting_id == record.id).delete()
+    signals = result.get("sales_signals") or []
+    if not isinstance(signals, list):
+        return
+    detected_at = record.meeting_date or (record.created_at.date() if record.created_at else None)
+    for item in signals:
+        if not isinstance(item, dict):
+            continue
+        stype = (item.get("signal_type") or "").strip()
+        if stype:
+            db.add(SalesSignal(
+                company_id=record.company_id,
+                meeting_id=record.id,
+                signal_type=stype,
+                strength=item.get("strength") or "MED",
+                content=item.get("content") or "",
+                detected_at=detected_at,
+            ))
+
+
 def _upsert_issue_tags(db: Session, record: MeetingRecord, result: dict) -> None:
     """회의록 분석 결과에서 IssueTag 저장 (기존 것 삭제 후 재생성)."""
     db.query(IssueTag).filter(IssueTag.meeting_id == record.id).delete()
@@ -856,6 +946,7 @@ def _upsert_company_history(db: Session, record: MeetingRecord, result: dict) ->
 def _save_meeting_analysis(db: Session, record: MeetingRecord, result: dict) -> None:
     db.add(_analysis_from_result(record, result))
     _add_generated_items(db, record, result)
+    _upsert_sales_signals(db, record, result)
     _upsert_issue_tags(db, record, result)
     _upsert_company_history(db, record, result)
     db.commit()
@@ -925,6 +1016,7 @@ def _analyze_record(db: Session, record: MeetingRecord, *, schedule_only: bool =
     if record.analysis:
         _update_meeting_analysis(record.analysis, result, schedule_only=schedule_only)
         if not schedule_only:
+            _upsert_sales_signals(db, record, result)
             _upsert_issue_tags(db, record, result)
             _upsert_company_history(db, record, result)
         db.commit()

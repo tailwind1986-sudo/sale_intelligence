@@ -241,7 +241,10 @@ function renderList(id, rows, type) {
 }
 
 async function loadDashboard() {
-  const data = await api("/api/dashboard");
+  const [data, hotData] = await Promise.all([
+    api("/api/dashboard"),
+    api("/api/workspace/hot-companies?limit=5"),
+  ]);
   if (!data) return;
   renderMetrics(data.metrics || {});
   renderList("todaySchedules", data.today_schedules || [], "schedule");
@@ -249,6 +252,32 @@ async function loadDashboard() {
   renderList("dashboardActions", data.actions || [], "action");
   renderList("dashboardPromises", data.promises || [], "promise");
   renderList("meetings", data.recent_meetings || [], "meeting");
+  renderHotCompanies(hotData || []);
+}
+
+function renderHotCompanies(list) {
+  const el = $("hotCompaniesPanel");
+  if (!el) return;
+  if (!list.length) {
+    el.innerHTML = `<p class="empty">최근 90일 내 영업 신호가 없습니다.</p>`;
+    return;
+  }
+  const signalEmoji = {
+    "대표참석": "👑", "견적요청": "💰", "예산확보": "✅",
+    "데모요청": "🖥️", "계약논의": "📝", "추가주문": "🔄", "긍정반응": "🔥",
+  };
+  el.innerHTML = list.map(c => `
+    <div class="hot-company-row" data-company-open="${c.id}" style="cursor:pointer">
+      <div class="hot-main">
+        <strong>${escapeHtml(c.name)}</strong>
+        <span>${escapeHtml(c.sales_stage || "-")}</span>
+      </div>
+      <div class="hot-signals">
+        ${(c.top_signals || []).map(s => `<span class="hot-signal-chip">${signalEmoji[s] || "📌"} ${escapeHtml(s)}</span>`).join("")}
+      </div>
+      <span class="hot-score">🔥 ${c.hot_score}</span>
+    </div>
+  `).join("");
 }
 
 function companyOptions(selected = "") {
@@ -572,6 +601,41 @@ async function openCompany(companyId) {
   $("companyDetail").innerHTML = renderCompanyDetail(detail);
 }
 
+function renderSalesSignals(c) {
+  const signals = c.sales_signals || [];
+  const hotScore = c.hot_score || 0;
+  if (!signals.length) return "";
+
+  const signalEmoji = {
+    "대표참석": "👑", "견적요청": "💰", "예산확보": "✅",
+    "데모요청": "🖥️", "계약논의": "📝", "추가주문": "🔄", "긍정반응": "🔥",
+  };
+  const strengthCls = { "HIGH": "sig-high", "MED": "sig-med", "LOW": "sig-low" };
+
+  return `
+    <div class="detail-section">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">
+        <h3 style="margin:0">영업 신호</h3>
+        ${hotScore > 0 ? `<span class="hot-score-badge">🔥 HOT ${hotScore}</span>` : ""}
+      </div>
+      <div class="signal-list">
+        ${signals.map(s => `
+          <div class="signal-row ${strengthCls[s.strength] || "sig-med"}">
+            <span class="signal-icon">${signalEmoji[s.signal_type] || "📌"}</span>
+            <div class="signal-body">
+              <strong>${escapeHtml(s.signal_type)}</strong>
+              <span>${escapeHtml(s.content || "")}</span>
+            </div>
+            <div class="signal-meta">
+              <span class="signal-strength ${strengthCls[s.strength] || ""}">${s.strength}</span>
+              <time>${escapeHtml(s.detected_at || "")}</time>
+            </div>
+          </div>
+        `).join("")}
+      </div>
+    </div>`;
+}
+
 function renderIssueSummary(c) {
   const issues = c.issue_summary || [];
   if (!issues.length) return "";
@@ -661,6 +725,7 @@ function renderCompanyDetail(c) {
         </div>
       `).join("") || `<p class="empty">고객 정보가 없습니다.</p>`}
     </div>
+    ${renderSalesSignals(c)}
     ${renderIssueSummary(c)}
     ${renderCompanyHistory(c)}
     <div class="detail-section">
@@ -1215,7 +1280,10 @@ function bindEvents() {
       await loadDashboard();
     }
     const companyOpen = target.closest("[data-company-open]")?.dataset.companyOpen;
-    if (companyOpen) await openCompany(companyOpen);
+    if (companyOpen) {
+      setView("companies");
+      await openCompany(companyOpen);
+    }
     const companyEdit = target.dataset.companyEdit;
     if (companyEdit) showCompanyForm(state.selectedCompany);
     const companyDelete = target.dataset.companyDelete;
