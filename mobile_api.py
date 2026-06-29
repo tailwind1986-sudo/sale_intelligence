@@ -404,8 +404,7 @@ def debug_insight_test(company_id: int, db: Session = Depends(get_db), year_mont
 @app.get("/api/workspace/hot-companies", dependencies=[Depends(_require_auth)])
 def hot_companies(limit: int = 10, db: Session = Depends(get_db)):
     """최근 90일 영업 신호 기준 HOT 고객사 순위"""
-    from datetime import date as _date
-    today = __today_kst()
+    today = _today_kst()
     cutoff = today.replace(month=today.month - 3) if today.month > 3 \
         else today.replace(year=today.year - 1, month=today.month + 9)
     _w = {"HIGH": 3, "MED": 1, "LOW": 0}
@@ -664,8 +663,7 @@ def _company_to_dict(c: Company, detail: bool = False) -> dict:
             for m in recent
         ]
         # 영업 기회 신호 (최근 90일, 최신순)
-        from datetime import date as _date
-        _cutoff = __today_kst().replace(day=1)
+        _cutoff = _today_kst().replace(day=1)
         import calendar as _cal
         _cutoff = (_cutoff.replace(month=_cutoff.month - 3) if _cutoff.month > 3
                    else _cutoff.replace(year=_cutoff.year - 1, month=_cutoff.month + 9))
