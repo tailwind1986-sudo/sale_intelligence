@@ -521,11 +521,14 @@ function renderCompanies() {
     return;
   }
   $("companyList").innerHTML = state.companyRows.map(row => `
-    <button class="company-card${state.openCompanyId === String(row.id) ? " company-card-active" : ""}" data-company-open="${row.id}">
-      <strong>${escapeHtml(row.name)}</strong>
-      <span>${escapeHtml([row.business_type || "-", row.sales_stage || "-", row.risk_level || "-"].join(" · "))}</span>
-      <small>미팅 ${row.meeting_count} · 액션 ${row.action_count} · 약속 ${row.promise_count}</small>
-    </button>
+    <div class="company-item">
+      <button class="company-card" data-company-open="${row.id}">
+        <strong>${escapeHtml(row.name)}</strong>
+        <span>${escapeHtml([row.business_type || "-", row.sales_stage || "-", row.risk_level || "-"].join(" · "))}</span>
+        <small>미팅 ${row.meeting_count} · 액션 ${row.action_count} · 약속 ${row.promise_count}</small>
+      </button>
+      <div class="company-expand" hidden></div>
+    </div>
   `).join("");
 }
 
@@ -603,30 +606,64 @@ function infoPayloadFromForm(form, companyId) {
   };
 }
 
-async function openCompany(companyId) {
-  const id = String(companyId);
-  if (state.loadingCompanyId === id) return;
-  state.loadingCompanyId = id;
+// 고객사 카드 클릭: 해당 카드 아래 상세 펼침/접힘
+async function toggleCompany(btn) {
+  const id = String(btn.dataset.companyOpen);
+  const item = btn.closest(".company-item");
+  const expandEl = item.querySelector(".company-expand");
 
+  // 이미 열려 있으면 닫기
+  if (!expandEl.hidden) {
+    expandEl.hidden = true;
+    btn.classList.remove("company-card-active");
+    return;
+  }
+
+  // 로딩 중 중복 클릭 방지
+  if (btn.dataset.loading) return;
+
+  // 다른 열린 카드 모두 닫기
+  document.querySelectorAll(".company-item").forEach(el => {
+    if (el !== item) {
+      el.querySelector(".company-expand").hidden = true;
+      el.querySelector(".company-card").classList.remove("company-card-active");
+    }
+  });
+
+  btn.dataset.loading = "1";
+  btn.classList.add("company-card-active");
   try {
     const detail = await api(`/api/workspace/companies/${id}`);
-    if (!detail) return;
+    if (!detail) { btn.classList.remove("company-card-active"); return; }
     state.selectedCompany = detail;
-    state.openCompanyId = id;
-
-    // 카드 활성 표시 갱신
-    document.querySelectorAll(".company-card").forEach(el => {
-      el.classList.toggle("company-card-active", el.dataset.companyOpen === id);
-    });
-
-    $("companyDetail").innerHTML = renderCompanyDetail(detail);
-
-    // 모바일에서만 상세 패널로 스크롤
-    if (window.innerWidth < 768) {
-      $("companyDetail").scrollIntoView({ behavior: "smooth", block: "start" });
-    }
+    expandEl.innerHTML = renderCompanyDetail(detail);
+    expandEl.hidden = false;
+    expandEl.scrollIntoView({ behavior: "smooth", block: "nearest" });
   } finally {
-    state.loadingCompanyId = null;
+    delete btn.dataset.loading;
+  }
+}
+
+// 대시보드 등 외부에서 호출할 때 사용 (PC 우측 패널)
+async function openCompany(companyId) {
+  const id = String(companyId);
+  const detail = await api(`/api/workspace/companies/${id}`);
+  if (!detail) return;
+  state.selectedCompany = detail;
+  // 목록에 해당 카드가 있으면 toggleCompany 방식으로 열기
+  const btn = document.querySelector(`.company-card[data-company-open="${id}"]`);
+  if (btn) {
+    const expandEl = btn.closest(".company-item").querySelector(".company-expand");
+    document.querySelectorAll(".company-item").forEach(el => {
+      el.querySelector(".company-expand").hidden = true;
+      el.querySelector(".company-card").classList.remove("company-card-active");
+    });
+    expandEl.innerHTML = renderCompanyDetail(detail);
+    expandEl.hidden = false;
+    btn.classList.add("company-card-active");
+    btn.scrollIntoView({ behavior: "smooth", block: "nearest" });
+  } else {
+    $("companyDetail").innerHTML = renderCompanyDetail(detail);
   }
 }
 
@@ -1415,10 +1452,16 @@ function bindEvents() {
       await loadPromises();
       await loadDashboard();
     }
-    const companyOpen = target.closest("[data-company-open]")?.dataset.companyOpen;
-    if (companyOpen) {
-      setView("companies");
-      await openCompany(companyOpen);
+    const companyOpenBtn = target.closest("[data-company-open]");
+    if (companyOpenBtn) {
+      if (companyOpenBtn.closest(".company-item")) {
+        // 고객사 목록 카드 클릭 → 인라인 펼침/접힘
+        await toggleCompany(companyOpenBtn);
+      } else {
+        // 대시보드 등 다른 곳에서 클릭 → 고객사 탭으로 이동 후 펼침
+        setView("companies");
+        await openCompany(companyOpenBtn.dataset.companyOpen);
+      }
     }
     const companyEdit = target.dataset.companyEdit;
     if (companyEdit) showCompanyForm(state.selectedCompany);
