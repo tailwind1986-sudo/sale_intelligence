@@ -102,8 +102,11 @@ async function api(path, options = {}) {
     throw new Error("로그인이 필요합니다.");
   }
   if (!res.ok) {
-    const body = await res.json().catch(() => ({}));
-    throw new Error(body.detail || "데이터를 불러오지 못했습니다.");
+    const text = await res.text().catch(() => "");
+    let detail = "";
+    try { detail = JSON.parse(text).detail; } catch {}
+    if (Array.isArray(detail)) detail = detail.map(d => d.msg || JSON.stringify(d)).join(", ");
+    throw new Error(detail || `HTTP ${res.status} 오류`);
   }
   return res.json();
 }
