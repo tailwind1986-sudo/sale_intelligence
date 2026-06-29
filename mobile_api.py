@@ -410,6 +410,12 @@ def generate_company_monthly_insight(company_id: int, db: Session = Depends(get_
         for m in month_meetings
     ]
 
+    if not meeting_summaries:
+        raise HTTPException(
+            status_code=400,
+            detail=f"{ym} 에 분석된 미팅이 없어 인사이트를 생성할 수 없습니다."
+        )
+
     # CompanyHistory 지표
     history_row = db.query(CompanyHistory).filter(
         CompanyHistory.company_id == company_id,
@@ -1018,16 +1024,18 @@ def _upsert_relationship_notes(db: Session, record: MeetingRecord, result: dict)
         category = (item.get("category") or "기타").strip()
         if not key or not value:
             continue
-        # 동일 company + key 가 이미 있으면 건드리지 않음 (최초 파악 시점 보존)
-        existing = (
+        # 동일 company + key + value 가 이미 있으면 중복 저장 안 함
+        # (같은 key라도 다른 value는 별도 항목으로 허용 — 예: "선호 음식: 삼겹살" vs "선호 음식: 초밥")
+        duplicate = (
             db.query(CustomerInfo)
             .filter(
                 CustomerInfo.company_id == record.company_id,
                 CustomerInfo.key == key,
+                CustomerInfo.value == value,
             )
             .first()
         )
-        if existing:
+        if duplicate:
             continue
         db.add(CustomerInfo(
             company_id=record.company_id,

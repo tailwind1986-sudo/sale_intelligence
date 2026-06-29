@@ -755,6 +755,15 @@ textarea { min-height: 72px; resize: vertical; }
 .insight-scores { display: flex; gap: 12px; font-size: 12px; color: var(--muted); }
 .insight-score-item strong { color: var(--text); font-weight: 700; }
 
+.insight-section-label {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin: 8px 0 4px;
+}
+
 .hist-risk { font-weight: 700; font-size: 13px; }
 
 @media (max-width: 768px) {
