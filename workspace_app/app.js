@@ -605,31 +605,43 @@ function infoPayloadFromForm(form, companyId) {
 }
 
 async function openCompany(companyId) {
-  const detail = await api(`/api/workspace/companies/${companyId}`);
-  if (!detail) return;
-  state.selectedCompany = detail;
+  const id = String(companyId);
   const isMobile = window.innerWidth < 768;
+
+  // 모바일: API 호출 전에 토글 여부 판단 (이미 열린 카드 클릭 시 바로 닫기)
   if (isMobile) {
-    const inlineEl = $(`inline-detail-${companyId}`);
-    const card = inlineEl?.previousElementSibling;
-    // 이미 열려 있으면 닫기
-    if (inlineEl && !inlineEl.classList.contains("hidden") && state.openCompanyId === companyId) {
+    const inlineEl = $(`inline-detail-${id}`);
+    if (inlineEl && !inlineEl.classList.contains("hidden") && state.openCompanyId === id) {
       inlineEl.classList.add("hidden");
-      card?.classList.remove("company-card-active");
+      inlineEl.previousElementSibling?.classList.remove("company-card-active");
       state.openCompanyId = null;
       return;
     }
-    // 기존에 열린 다른 카드 닫기
-    if (state.openCompanyId) {
+  }
+
+  const detail = await api(`/api/workspace/companies/${id}`);
+  if (!detail) return;
+  state.selectedCompany = detail;
+
+  if (isMobile) {
+    // 기존에 열린 카드 닫기
+    if (state.openCompanyId && state.openCompanyId !== id) {
       const prev = $(`inline-detail-${state.openCompanyId}`);
-      prev?.classList.add("hidden");
-      prev?.previousElementSibling?.classList.remove("company-card-active");
+      if (prev) {
+        prev.classList.add("hidden");
+        prev.previousElementSibling?.classList.remove("company-card-active");
+      }
     }
+    const inlineEl = $(`inline-detail-${id}`);
     if (inlineEl) {
       inlineEl.innerHTML = renderCompanyDetail(detail);
       inlineEl.classList.remove("hidden");
-      card?.classList.add("company-card-active");
-      state.openCompanyId = companyId;
+      inlineEl.previousElementSibling?.classList.add("company-card-active");
+      state.openCompanyId = id;
+      inlineEl.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    } else {
+      // 목록에 없을 때(대시보드 등에서 호출) — PC 방식으로 폴백
+      $("companyDetail").innerHTML = renderCompanyDetail(detail);
     }
   } else {
     $("companyDetail").innerHTML = renderCompanyDetail(detail);
