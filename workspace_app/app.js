@@ -526,6 +526,7 @@ function renderCompanies() {
       <span>${escapeHtml([row.business_type || "-", row.sales_stage || "-", row.risk_level || "-"].join(" · "))}</span>
       <small>미팅 ${row.meeting_count} · 액션 ${row.action_count} · 약속 ${row.promise_count}</small>
     </button>
+    <div class="company-inline-detail hidden" id="inline-detail-${row.id}"></div>
   `).join("");
 }
 
@@ -607,7 +608,32 @@ async function openCompany(companyId) {
   const detail = await api(`/api/workspace/companies/${companyId}`);
   if (!detail) return;
   state.selectedCompany = detail;
-  $("companyDetail").innerHTML = renderCompanyDetail(detail);
+  const isMobile = window.innerWidth < 768;
+  if (isMobile) {
+    const inlineEl = $(`inline-detail-${companyId}`);
+    const card = inlineEl?.previousElementSibling;
+    // 이미 열려 있으면 닫기
+    if (inlineEl && !inlineEl.classList.contains("hidden") && state.openCompanyId === companyId) {
+      inlineEl.classList.add("hidden");
+      card?.classList.remove("company-card-active");
+      state.openCompanyId = null;
+      return;
+    }
+    // 기존에 열린 다른 카드 닫기
+    if (state.openCompanyId) {
+      const prev = $(`inline-detail-${state.openCompanyId}`);
+      prev?.classList.add("hidden");
+      prev?.previousElementSibling?.classList.remove("company-card-active");
+    }
+    if (inlineEl) {
+      inlineEl.innerHTML = renderCompanyDetail(detail);
+      inlineEl.classList.remove("hidden");
+      card?.classList.add("company-card-active");
+      state.openCompanyId = companyId;
+    }
+  } else {
+    $("companyDetail").innerHTML = renderCompanyDetail(detail);
+  }
 }
 
 function renderSalesSignals(c) {
@@ -646,7 +672,11 @@ function renderSalesSignals(c) {
     </div>
     <p style="font-size:11px;color:var(--muted);margin-top:6px">※ HIGH=3점·MED=1점 가중 합산 / 최근 90일 기준</p>`;
 
-  return makeSection(`영업 신호 ${hotBadge}`, bodyHtml, { open: true });
+  return `
+  <div class="detail-section">
+    <h3>영업 신호 ${hotBadge}</h3>
+    <div class="section-body">${bodyHtml}</div>
+  </div>`;
 }
 
 function renderIssueSummary(c) {
@@ -668,7 +698,11 @@ function renderIssueSummary(c) {
       return `<span class="issue-tag-badge" style="background:${bg};color:${color}">${escapeHtml(tag)} <strong>${count}</strong></span>`;
     }).join("")}
   </div>`;
-  return makeSection("반복 이슈", issueBody, { open: false });
+  return `
+  <div class="detail-section">
+    <h3>반복 이슈</h3>
+    <div class="section-body">${issueBody}</div>
+  </div>`;
 }
 
 function renderCompanyHistory(c) {
@@ -696,7 +730,11 @@ function renderCompanyHistory(c) {
       </div>`;
     }).join("")}
   </div>`;
-  return makeSection("관계 추이", histBody, { open: false });
+  return `
+  <div class="detail-section">
+    <h3>관계 추이</h3>
+    <div class="section-body">${histBody}</div>
+  </div>`;
 }
 
 function _insightMonthOptions(existingYMs) {
@@ -725,10 +763,14 @@ function renderMonthlyInsights(c) {
   const insightExtra = `<div style="display:flex;gap:6px;align-items:center">${monthSelect}${genBtn}</div>`;
 
   if (!insights.length) {
-    return makeSection("월간 인사이트",
-      `<p class="empty">인사이트가 없습니다. 월을 선택하고 AI 분석 버튼으로 생성하세요.</p>`,
-      { open: false, extra: insightExtra }
-    );
+    return `
+    <div class="detail-section">
+      <div class="section-header-with-extra">
+        <h3>월간 인사이트</h3>
+        ${insightExtra}
+      </div>
+      <div class="section-body"><p class="empty">인사이트가 없습니다. 월을 선택하고 AI 분석 버튼으로 생성하세요.</p></div>
+    </div>`;
   }
 
   const cards = insights.map(ins => {
@@ -772,26 +814,16 @@ function renderMonthlyInsights(c) {
     </div>`;
   }).join("");
 
-  return makeSection("월간 인사이트", cards, { open: false, extra: insightExtra });
-}
-
-// 아코디언 섹션 래퍼
-// title: 헤더 텍스트, bodyHtml: 내용, opts.extra: 헤더 우측 버튼, opts.open: 기본 펼침 여부
-function makeSection(title, bodyHtml, { extra = "", open = false } = {}) {
-  const isMobile = window.innerWidth < 768;
-  const collapsed = isMobile && !open ? " collapsed" : "";
   return `
-  <div class="detail-section${collapsed}">
-    <div class="section-header">
-      <div class="section-toggle" data-section-toggle>
-        <span class="section-toggle-title">${title}</span>
-        <span class="section-chevron">▼</span>
-      </div>
-      ${extra ? `<div class="section-header-extra">${extra}</div>` : ""}
+  <div class="detail-section">
+    <div class="section-header-with-extra">
+      <h3>월간 인사이트</h3>
+      ${insightExtra}
     </div>
-    <div class="section-body">${bodyHtml}</div>
+    <div class="section-body">${cards}</div>
   </div>`;
 }
+
 
 function renderCompanyDetail(c) {
   return `
@@ -806,18 +838,25 @@ function renderCompanyDetail(c) {
       </div>
     </div>
     <p class="meta">${escapeHtml(c.memo || "메모 없음")}</p>
-    ${makeSection("담당자",
-      `<div id="contactFormSlot"></div>` +
-      ((c.contacts || []).map(row => `
+    <div class="detail-section">
+      <div class="section-header-with-extra">
+        <h3>담당자</h3>
+        <button data-contact-new="${c.id}" class="small-primary">추가</button>
+      </div>
+      <div id="contactFormSlot"></div>
+      ${(c.contacts || []).map(row => `
         <div class="mini-row">
           <div><strong>${row.is_primary ? "★ " : ""}${escapeHtml(row.name)}</strong><span>${escapeHtml([row.position, row.phone, row.email].filter(Boolean).join(" · "))}</span></div>
           <div class="row-actions"><button data-contact-edit="${row.id}">수정</button><button class="danger-btn" data-contact-delete="${row.id}">삭제</button></div>
-        </div>`).join("") || `<p class="empty">담당자가 없습니다.</p>`),
-      { open: true, extra: `<button data-contact-new="${c.id}" class="small-primary">추가</button>` }
-    )}
-    ${makeSection("고객 정보",
-      `<div id="infoFormSlot"></div>` +
-      ((c.customer_infos || []).map(row => `
+        </div>`).join("") || `<p class="empty">담당자가 없습니다.</p>`}
+    </div>
+    <div class="detail-section">
+      <div class="section-header-with-extra">
+        <h3>고객 정보</h3>
+        <button data-info-new="${c.id}" class="small-primary">추가</button>
+      </div>
+      <div id="infoFormSlot"></div>
+      ${(c.customer_infos || []).map(row => `
         <div class="mini-row">
           <div>
             <strong>[${escapeHtml(row.category || "기타")}] ${escapeHtml(row.key)}</strong>
@@ -825,13 +864,12 @@ function renderCompanyDetail(c) {
             <span>${escapeHtml(row.value)} ${row.contact_name ? " · " + escapeHtml(row.contact_name) : ""}</span>
           </div>
           <div class="row-actions"><button data-info-edit="${row.id}">수정</button><button class="danger-btn" data-info-delete="${row.id}">삭제</button></div>
-        </div>`).join("") || `<p class="empty">고객 정보가 없습니다.</p>`),
-      { open: false, extra: `<button data-info-new="${c.id}" class="small-primary">추가</button>` }
-    )}
-    ${makeSection("최근 미팅",
-      (c.recent_meetings || []).map(row => `<div class="mini-row"><div><strong>${escapeHtml(row.date)}</strong><span>${escapeHtml(row.summary || "-")}</span></div></div>`).join("") || `<p class="empty">최근 미팅이 없습니다.</p>`,
-      { open: true }
-    )}
+        </div>`).join("") || `<p class="empty">고객 정보가 없습니다.</p>`}
+    </div>
+    <div class="detail-section">
+      <h3>최근 미팅</h3>
+      ${(c.recent_meetings || []).map(row => `<div class="mini-row"><div><strong>${escapeHtml(row.date)}</strong><span>${escapeHtml(row.summary || "-")}</span></div></div>`).join("") || `<p class="empty">최근 미팅이 없습니다.</p>`}
+    </div>
     ${renderCompanyHistory(c)}
     ${renderSalesSignals(c)}
     ${renderIssueSummary(c)}
@@ -1446,12 +1484,7 @@ function bindEvents() {
       await api(`/api/schedule-candidates/${row.meeting_id}/${row.index}/ignore`, { method: "POST" });
       await loadCandidates();
     }
-    // 아코디언 토글 — 모바일에서만 동작 (PC는 CSS로 항상 펼침)
-    const toggleEl = target.closest("[data-section-toggle]");
-    if (toggleEl && window.innerWidth < 768) {
-      toggleEl.closest(".detail-section").classList.toggle("collapsed");
-      return;
-    }
+
 
     const meetingOpen = target.closest("[data-meeting-open]")?.dataset.meetingOpen;
     if (meetingOpen) await openMeeting(meetingOpen);
