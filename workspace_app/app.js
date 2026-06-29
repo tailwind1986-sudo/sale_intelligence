@@ -1429,7 +1429,7 @@ function setView(view) {
   $("viewMeetings").classList.toggle("hidden", view !== "meetings");
   $("viewUpload").classList.toggle("hidden", view !== "upload");
   $("viewSearch").classList.toggle("hidden", view !== "search");
-  $("viewRisk").classList.toggle("hidden", view !== "risk");
+  $("viewSettings").classList.toggle("hidden", view !== "settings");
   $("viewMonthlyreport").classList.toggle("hidden", view !== "monthlyreport");
   $("viewCalendar").classList.toggle("hidden", view !== "calendar");
   if (view === "calendar") {
@@ -1442,7 +1442,7 @@ function setView(view) {
   const titles = {
     dashboard: "대시보드", actions: "액션 / 약속", companies: "고객사",
     candidates: "일정 후보", meetings: "미팅 요약", upload: "미팅 업로드",
-    search: "통합 검색", risk: "리스크 / 설정", calendar: "캘린더",
+    search: "통합 검색", settings: "설정", calendar: "캘린더",
     monthlyreport: "월간 리포트",
   };
   const titleEl = $("pageTitle");
@@ -1454,11 +1454,10 @@ function setView(view) {
     loadActions();
     loadPromises();
   }
-  if (view === "companies") loadCompanies();
+  if (view === "companies") { loadCompanies(); loadRisk(); }
   if (view === "candidates") loadCandidates();
   if (view === "upload") resetUploadForm();
   if (view === "meetings") loadMeetings();
-  if (view === "risk") loadRisk();
   if (view === "monthlyreport") initMonthlyReport();
 }
 

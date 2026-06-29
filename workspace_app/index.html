@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <meta name="theme-color" content="#ffffff" />
   <title>Sales Workspace</title>
-  <link rel="stylesheet" href="/mobile/workspace/static/styles.css?v=20260629-report1" />
+  <link rel="stylesheet" href="/mobile/workspace/static/styles.css?v=20260629-report2" />
 </head>
 <body>
   <section id="workspaceLogin" class="workspace-login hidden">
@@ -72,9 +72,9 @@
           <svg class="nav-icon" viewBox="0 0 20 20" fill="none"><circle cx="9" cy="9" r="5" stroke="currentColor" stroke-width="1.6"/><path d="M13 13l3 3" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
           통합 검색
         </button>
-        <button class="nav-item" data-view="risk">
-          <svg class="nav-icon" viewBox="0 0 20 20" fill="none"><path d="M10 3L18 17H2L10 3z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path d="M10 9v3M10 14.5v.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
-          리스크 / 설정
+        <button class="nav-item" data-view="settings">
+          <svg class="nav-icon" viewBox="0 0 20 20" fill="none"><circle cx="10" cy="10" r="2.5" stroke="currentColor" stroke-width="1.6"/><path d="M10 3v2M10 15v2M3 10h2M15 10h2M4.9 4.9l1.4 1.4M13.7 13.7l1.4 1.4M4.9 15.1l1.4-1.4M13.7 6.3l1.4-1.4" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>
+          설정
         </button>
         <button class="nav-item" data-view="monthlyreport">
           <svg class="nav-icon" viewBox="0 0 20 20" fill="none"><rect x="3" y="2" width="14" height="16" rx="2" stroke="currentColor" stroke-width="1.6"/><path d="M7 7h6M7 10h6M7 13h4" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>
@@ -196,6 +196,14 @@
               <div id="companyDetail" class="detail-box"></div>
             </div>
           </section>
+          <section class="panel" style="margin-top:14px">
+            <div class="panel-head">
+              <h2>리스크 분석</h2>
+              <select id="riskCompany"></select>
+            </div>
+            <div id="riskScoreboard" class="risk-grid"></div>
+            <div id="riskDetail" class="detail-box"></div>
+          </section>
         </section>
 
         <!-- 일정 후보 -->
@@ -277,16 +285,8 @@
           </section>
         </section>
 
-        <!-- 리스크/설정 -->
-        <section id="viewRisk" class="view hidden">
-          <section class="panel">
-            <div class="panel-head">
-              <h2>리스크 분석</h2>
-              <select id="riskCompany"></select>
-            </div>
-            <div id="riskScoreboard" class="risk-grid"></div>
-            <div id="riskDetail" class="detail-box"></div>
-          </section>
+        <!-- 설정 -->
+        <section id="viewSettings" class="view hidden">
           <section class="panel" style="margin-top:14px">
             <div class="panel-head">
               <h2>텔레그램 설정</h2>
@@ -345,6 +345,6 @@
     </div>
   </div>
 
-  <script src="/mobile/workspace/static/app.js?v=20260629-report1"></script>
+  <script src="/mobile/workspace/static/app.js?v=20260629-report2"></script>
 </body>
 </html>
