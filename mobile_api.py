@@ -13,6 +13,9 @@ _KST = ZoneInfo("Asia/Seoul")
 def _now_kst() -> datetime:
     return datetime.now(_KST).replace(tzinfo=None)
 
+def _today_kst() -> date:
+    return datetime.now(_KST).date()
+
 try:
     import tomllib
 except ModuleNotFoundError:  # Python 3.10 server runtime
@@ -332,7 +335,7 @@ def update_company(company_id: int, payload: CompanyPayload, db: Session = Depen
         raise HTTPException(status_code=404, detail="Company not found")
     for key, value in payload.dict().items():
         setattr(row, key, value)
-    row.updated_at = datetime.now()
+    row.updated_at = _now_kst()
     db.commit()
     db.refresh(row)
     return _company_to_dict(row, detail=True)
@@ -402,7 +405,7 @@ def debug_insight_test(company_id: int, db: Session = Depends(get_db), year_mont
 def hot_companies(limit: int = 10, db: Session = Depends(get_db)):
     """최근 90일 영업 신호 기준 HOT 고객사 순위"""
     from datetime import date as _date
-    today = _date.today()
+    today = __today_kst()
     cutoff = today.replace(month=today.month - 3) if today.month > 3 \
         else today.replace(year=today.year - 1, month=today.month + 9)
     _w = {"HIGH": 3, "MED": 1, "LOW": 0}
@@ -582,7 +585,7 @@ def _action_to_dict(a: ActionItem) -> dict:
         "due_date": a.due_date.isoformat() if a.due_date else "",
         "status": a.status or "",
         "notes": a.notes or "",
-        "is_overdue": bool(a.due_date and a.due_date < date.today() and a.status != "완료"),
+        "is_overdue": bool(a.due_date and a.due_date < _today_kst() and a.status != "완료"),
     }
 
 
@@ -597,7 +600,7 @@ def _promise_to_dict(p: Promise) -> dict:
         "due_date": p.due_date.isoformat() if p.due_date else "",
         "status": p.status or "",
         "notes": p.notes or "",
-        "is_overdue": bool(p.due_date and p.due_date < date.today() and p.status != "완료"),
+        "is_overdue": bool(p.due_date and p.due_date < _today_kst() and p.status != "완료"),
     }
 
 
@@ -662,7 +665,7 @@ def _company_to_dict(c: Company, detail: bool = False) -> dict:
         ]
         # 영업 기회 신호 (최근 90일, 최신순)
         from datetime import date as _date
-        _cutoff = _date.today().replace(day=1)
+        _cutoff = __today_kst().replace(day=1)
         import calendar as _cal
         _cutoff = (_cutoff.replace(month=_cutoff.month - 3) if _cutoff.month > 3
                    else _cutoff.replace(year=_cutoff.year - 1, month=_cutoff.month + 9))
@@ -1364,7 +1367,7 @@ def _risk_row(company: Company) -> dict:
     delayed_promises = sum(1 for p in company.promises if p.status == "지연")
     overdue_actions = sum(
         1 for item in company.action_items
-        if item.due_date and item.due_date < date.today() and item.status != "완료"
+        if item.due_date and item.due_date < _today_kst() and item.status != "완료"
     )
     risk_scores = [m.analysis.risk_score for m in company.meetings if m.analysis and m.analysis.risk_score is not None]
     trust_scores = [m.analysis.trust_score for m in company.meetings if m.analysis and m.analysis.trust_score is not None]
@@ -1448,7 +1451,7 @@ def update_company_risk(company_id: int, payload: dict, db: Session = Depends(ge
     if risk_level not in {"높음", "보통", "낮음"}:
         raise HTTPException(status_code=400, detail="Invalid risk level")
     company.risk_level = risk_level
-    company.updated_at = datetime.now()
+    company.updated_at = _now_kst()
     db.commit()
     return {"ok": True}
 
@@ -1509,7 +1512,7 @@ def telegram_date_briefing(target_date: str, db: Session = Depends(get_db)):
 
 @app.get("/api/dashboard", dependencies=[Depends(_require_auth)])
 def dashboard(db: Session = Depends(get_db)):
-    now = datetime.now()
+    now = _now_kst()
     today = now.date()
     day_start = datetime.combine(today, time.min)
     day_end = datetime.combine(today, time.max)
@@ -1667,7 +1670,7 @@ def update_action(action_id: int, payload: ActionPayload, db: Session = Depends(
     row.due_date = payload.due_date
     row.status = payload.status
     row.notes = payload.notes
-    row.updated_at = datetime.now()
+    row.updated_at = _now_kst()
     db.commit()
     db.refresh(row)
     return _action_to_dict(row)
@@ -1727,7 +1730,7 @@ def update_promise(promise_id: int, payload: PromisePayload, db: Session = Depen
     row.due_date = payload.due_date
     row.status = payload.status
     row.notes = payload.notes
-    row.updated_at = datetime.now()
+    row.updated_at = _now_kst()
     db.commit()
     db.refresh(row)
     return _promise_to_dict(row)
