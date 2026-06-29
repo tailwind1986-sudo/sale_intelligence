@@ -573,16 +573,16 @@ def _compact_meeting_report(meeting: MeetingRecord) -> str:
             if isinstance(item, dict):
                 topic = item.get("topic") or "주요 논의"
                 desc = item.get("discussion") or item.get("current_status") or item.get("needs_review") or ""
-                lines.append(f"- {topic}: {_brief_text(desc, 80)}")
+                lines.append(f"- {topic}: {desc.strip()}")
             else:
-                lines.append(f"- {_brief_text(str(item), 90)}")
+                lines.append(f"- {str(item).strip()}")
     else:
         for item in _json_list(analysis.key_discussions)[:5]:
-            lines.append(f"- {_brief_text(str(item), 90)}")
+            lines.append(f"- {str(item).strip()}")
     checks = _json_list(getattr(analysis, "risks_and_checks", None)) or _json_list(analysis.pending_items)
     if checks:
         lines.extend(["", "확인필요"])
-        lines.extend(f"- {_brief_text(str(item), 90)}" for item in checks[:3])
+        lines.extend(f"- {str(item).strip()}" for item in checks[:3])
     return "\n".join(lines)
 
 
