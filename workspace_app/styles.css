@@ -1504,3 +1504,135 @@ time.date-past   { color: var(--danger); }
     grid-template-columns: minmax(0, 1fr) 92px repeat(2, 58px);
   }
 }
+
+/* ── Monthly Report ──────────────────────────────────── */
+.report-stat-bar {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-bottom: 16px;
+}
+.report-stat {
+  flex: 1 1 80px;
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 10px 12px;
+  text-align: center;
+}
+.report-stat-num {
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: var(--accent);
+}
+.report-stat-label {
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  margin-top: 2px;
+}
+.report-section {
+  margin-bottom: 18px;
+}
+.report-section h3 {
+  font-size: 0.9rem;
+  font-weight: 700;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin-bottom: 8px;
+  padding-bottom: 4px;
+  border-bottom: 1px solid var(--border);
+}
+.report-summary-text {
+  font-size: 0.9rem;
+  line-height: 1.65;
+  color: var(--text);
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 12px 14px;
+}
+.report-card {
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 12px 14px;
+  margin-bottom: 8px;
+}
+.report-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 4px;
+}
+.report-card-name {
+  font-weight: 700;
+  font-size: 0.95rem;
+}
+.report-score-badges {
+  display: flex;
+  gap: 5px;
+}
+.badge-deal, .badge-rel {
+  font-size: 0.72rem;
+  padding: 2px 7px;
+  border-radius: 20px;
+  font-weight: 600;
+}
+.badge-deal {
+  background: color-mix(in srgb, var(--accent) 15%, transparent);
+  color: var(--accent);
+}
+.badge-rel {
+  background: color-mix(in srgb, #10b981 15%, transparent);
+  color: #10b981;
+}
+.report-card-signal, .report-card-issue {
+  font-size: 0.82rem;
+  color: var(--text-muted);
+  margin-top: 4px;
+}
+.report-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--border);
+  font-size: 0.88rem;
+}
+.report-row:last-child {
+  border-bottom: none;
+}
+.stagnant-row .report-row-name {
+  font-weight: 600;
+  min-width: 90px;
+}
+.stagnant-row .report-row-days {
+  color: #f59e0b;
+  font-weight: 600;
+  min-width: 55px;
+}
+.risk-row .report-row-name {
+  font-weight: 600;
+  min-width: 90px;
+}
+.risk-row .report-row-reason {
+  color: var(--text-muted);
+  flex: 1;
+}
+.report-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.report-action-item {
+  display: flex;
+  gap: 10px;
+  font-size: 0.88rem;
+  line-height: 1.5;
+}
+.report-action-num {
+  font-weight: 700;
+  color: var(--accent);
+  min-width: 20px;
+}

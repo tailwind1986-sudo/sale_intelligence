@@ -2227,3 +2227,25 @@ def delete_schedule(schedule_id: int, db: Session = Depends(get_db)):
     db.delete(row)
     db.commit()
     return {"ok": True}
+
+
+@app.get("/api/workspace/monthly-report", dependencies=[Depends(_require_auth)])
+def get_monthly_report(year_month: str | None = None, db: Session = Depends(get_db)):
+    """전사 월간 리포트 데이터 반환 (UI용)"""
+    from services.telegram_service import build_monthly_report_data
+    try:
+        data = build_monthly_report_data(db, year_month)
+        return data
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"{type(e).__name__}: {e}")
+
+
+@app.post("/api/workspace/monthly-report/send", dependencies=[Depends(_require_auth)])
+def send_monthly_report_now(year_month: str | None = None, db: Session = Depends(get_db)):
+    """수동으로 월간 리포트 텔레그램 전송"""
+    from services.telegram_service import send_monthly_report
+    try:
+        ok = send_monthly_report(db, year_month)
+        return {"ok": ok}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"{type(e).__name__}: {e}")

@@ -351,3 +351,85 @@ def generate_monthly_insight(
         if m:
             raw = m.group(1)
     return json.loads(raw)
+
+
+def generate_monthly_report_summary(
+    year_month: str,
+    stats: dict,
+    hot_companies: list,
+    stagnant_companies: list,
+    risk_companies: list,
+    top_issues: list,
+) -> dict:
+    """전사 월간 리포트 GPT 총평 + 다음달 추천 액션 생성.
+
+    Returns:
+        {"overall_summary": str, "next_month_actions": [str, ...]}
+    """
+    api_key = _get_api_key()
+    if not api_key:
+        raise ValueError("OPENAI_API_KEY가 설정되지 않았습니다.")
+    client = OpenAI(api_key=api_key)
+
+    hot_text = "\n".join(
+        f"- {c['name']}: 딜확률 {c.get('deal_probability', '?')}%, 관계점수 {c.get('relationship_score', '?')}점, {c.get('summary', '')[:80]}"
+        for c in hot_companies
+    )
+    stagnant_text = "\n".join(
+        f"- {c['name']} ({c['days_since']}일째 미접촉)" for c in stagnant_companies
+    )
+    risk_text = "\n".join(
+        f"- {c['name']}: {c.get('top_risk', '')}" for c in risk_companies
+    )
+    issue_text = "\n".join(
+        f"- {tag} ({cnt}건)" for tag, cnt in top_issues
+    )
+
+    user_prompt = f"""【{year_month} 전사 영업 현황】
+총 미팅: {stats.get('total_meetings', 0)}건 / 접촉 고객사: {stats.get('active_companies', 0)}개사
+
+【HOT 고객사】
+{hot_text or '없음'}
+
+【정체 고객 (30일 이상 미접촉)】
+{stagnant_text or '없음'}
+
+【위험 고객】
+{risk_text or '없음'}
+
+【반복 이슈】
+{issue_text or '없음'}
+
+위 데이터를 바탕으로 이달 영업 총평(2~3문장)과 다음달 반드시 챙겨야 할 추천 액션 3가지를 JSON으로 출력하세요.
+
+출력 형식:
+{{
+  "overall_summary": "이달 영업 총평 2~3문장",
+  "next_month_actions": [
+    "추천 액션 1",
+    "추천 액션 2",
+    "추천 액션 3"
+  ]
+}}"""
+
+    response = client.chat.completions.create(
+        model="gpt-4.1",
+        messages=[
+            {"role": "system", "content": "당신은 B2B 영업 전략 전문가입니다. 데이터를 바탕으로 간결하고 실용적인 인사이트를 제공합니다."},
+            {"role": "user", "content": user_prompt},
+        ],
+        temperature=0.4,
+        max_tokens=600,
+        response_format={"type": "json_object"},
+    )
+
+    raw = response.choices[0].message.content.strip()
+    if "```" in raw:
+        m = re.search(r"```(?:json)?\s*([\s\S]+?)\s*```", raw)
+        if m:
+            raw = m.group(1)
+    result = json.loads(raw)
+    return {
+        "overall_summary": result.get("overall_summary", ""),
+        "next_month_actions": result.get("next_month_actions", []),
+    }

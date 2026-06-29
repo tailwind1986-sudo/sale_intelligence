@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <meta name="theme-color" content="#ffffff" />
   <title>Sales Workspace</title>
-  <link rel="stylesheet" href="/mobile/workspace/static/styles.css?v=20260629-accordion6" />
+  <link rel="stylesheet" href="/mobile/workspace/static/styles.css?v=20260629-report1" />
 </head>
 <body>
   <section id="workspaceLogin" class="workspace-login hidden">
@@ -75,6 +75,10 @@
         <button class="nav-item" data-view="risk">
           <svg class="nav-icon" viewBox="0 0 20 20" fill="none"><path d="M10 3L18 17H2L10 3z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path d="M10 9v3M10 14.5v.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
           리스크 / 설정
+        </button>
+        <button class="nav-item" data-view="monthlyreport">
+          <svg class="nav-icon" viewBox="0 0 20 20" fill="none"><rect x="3" y="2" width="14" height="16" rx="2" stroke="currentColor" stroke-width="1.6"/><path d="M7 7h6M7 10h6M7 13h4" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>
+          월간 리포트
         </button>
       </nav>
 
@@ -316,6 +320,21 @@
           </section>
         </section>
 
+        <!-- 월간 리포트 -->
+        <section id="viewMonthlyreport" class="view hidden">
+          <section class="panel">
+            <div class="panel-head">
+              <h2>월간 영업 리포트</h2>
+              <div style="display:flex;gap:8px;align-items:center">
+                <select id="reportYmSelect" style="font-size:13px;padding:4px 8px;border:1px solid var(--border);border-radius:6px;background:var(--card-bg);color:var(--text)"></select>
+                <button id="reportLoadBtn" class="small-primary">조회</button>
+                <button id="reportSendBtn">텔레그램 전송</button>
+              </div>
+            </div>
+            <div id="monthlyReportBody"><p class="empty">조회 버튼을 눌러 리포트를 생성합니다.</p></div>
+          </section>
+        </section>
+
         <!-- 캘린더 -->
         <section id="viewCalendar" class="view view-calendar hidden">
           <iframe id="calendarFrame" src="/mobile/" frameborder="0" class="calendar-frame"></iframe>
@@ -326,6 +345,6 @@
     </div>
   </div>
 
-  <script src="/mobile/workspace/static/app.js?v=20260629-accordion6"></script>
+  <script src="/mobile/workspace/static/app.js?v=20260629-report1"></script>
 </body>
 </html>

@@ -1295,6 +1295,102 @@ function renderRisk(data) {
   `;
 }
 
+// ── 월간 리포트 ──────────────────────────────────────────────
+function _reportYmOptions() {
+  const now = new Date();
+  const opts = [];
+  for (let i = 0; i < 12; i++) {
+    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+    const ym = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+    opts.push(`<option value="${ym}">${ym}</option>`);
+  }
+  return opts.join("");
+}
+
+function initMonthlyReport() {
+  const sel = $("reportYmSelect");
+  if (!sel.options.length) sel.innerHTML = _reportYmOptions();
+}
+
+async function loadMonthlyReport() {
+  const ym = $("reportYmSelect").value;
+  const body = $("monthlyReportBody");
+  body.innerHTML = `<p class="empty">리포트 생성 중… (GPT 분석 포함, 1~2분 소요)</p>`;
+  const data = await api(`/api/workspace/monthly-report?year_month=${ym}`);
+  if (!data) { body.innerHTML = `<p class="error">불러오기 실패</p>`; return; }
+  body.innerHTML = renderMonthlyReportView(data);
+}
+
+function renderMonthlyReportView(d) {
+  const statBar = `
+    <div class="report-stat-bar">
+      <span>📅 ${escapeHtml(d.year_month)}</span>
+      <span>총 미팅 <strong>${d.stats.total_meetings}건</strong></span>
+      <span>접촉 고객사 <strong>${d.stats.active_companies}개사</strong></span>
+      <span class="muted">생성: ${escapeHtml(d.generated_at)} KST</span>
+    </div>`;
+
+  const summary = d.overall_summary ? `
+    <div class="report-section">
+      <h3>💬 이달 총평</h3>
+      <p class="report-summary-text">${escapeHtml(d.overall_summary)}</p>
+    </div>` : "";
+
+  const hotHtml = (d.hot_companies || []).map(c => `
+    <div class="report-card">
+      <div class="report-card-head">
+        <strong>${escapeHtml(c.name)}</strong>
+        <span class="report-score-badges">
+          <span class="badge-deal">딜 ${c.deal_probability ?? "-"}%</span>
+          <span class="badge-rel">관계 ${c.relationship_score ?? "-"}점</span>
+        </span>
+      </div>
+      ${c.summary ? `<p class="report-card-sub">${escapeHtml(c.summary)}</p>` : ""}
+    </div>`).join("");
+
+  const signalHtml = (d.signal_companies || []).map(s =>
+    `<div class="report-row"><span>${escapeHtml(s.name)}</span><span class="hot-score-badge">🔥 ${s.score}점</span></div>`
+  ).join("");
+
+  const issueHtml = (d.issue_summary || []).map(iss =>
+    `<div class="report-row"><span>${escapeHtml(iss.tag)}</span><span class="muted">${iss.count}건</span></div>`
+  ).join("");
+
+  const stagnantHtml = (d.stagnant_companies || []).map(c => {
+    const days = c.days_since != null ? `${c.days_since}일 미접촉` : "기록 없음";
+    return `<div class="report-row stagnant-row">
+      <span>${escapeHtml(c.name)}</span>
+      <span class="muted">${days}${c.last_date ? ` · 마지막 ${c.last_date}` : ""}</span>
+    </div>`;
+  }).join("");
+
+  const riskHtml = (d.risk_companies || []).map(c => `
+    <div class="report-row risk-row">
+      <span>${escapeHtml(c.name)}</span>
+      <span>딜 ${c.deal_probability ?? "-"}%${c.top_risk ? ` · ${escapeHtml(c.top_risk)}` : ""}</span>
+    </div>`).join("");
+
+  const actionsHtml = (d.next_month_actions || []).map((a, i) =>
+    `<div class="report-action-item"><span class="report-action-num">${i + 1}</span><span>${escapeHtml(a)}</span></div>`
+  ).join("");
+
+  const failedNote = d.failed_companies?.length
+    ? `<p class="muted" style="font-size:11px;margin-top:8px">분석 실패: ${d.failed_companies.map(f => escapeHtml(f.name)).join(", ")}</p>`
+    : "";
+
+  return `
+    ${statBar}
+    ${summary}
+    ${hotHtml ? `<div class="report-section"><h3>🔥 HOT 고객사 TOP5</h3>${hotHtml}</div>` : ""}
+    ${signalHtml ? `<div class="report-section"><h3>📡 영업 신호 상위</h3>${signalHtml}</div>` : ""}
+    ${issueHtml ? `<div class="report-section"><h3>⚠️ 반복 이슈 TOP5</h3>${issueHtml}</div>` : ""}
+    ${stagnantHtml ? `<div class="report-section"><h3>😶 정체 고객 <small>(30일↑ 미접촉)</small></h3>${stagnantHtml}</div>` : ""}
+    ${riskHtml ? `<div class="report-section"><h3>🚨 위험 고객</h3>${riskHtml}</div>` : ""}
+    ${actionsHtml ? `<div class="report-section report-actions"><h3>🎯 다음달 추천 액션</h3>${actionsHtml}</div>` : ""}
+    ${failedNote}
+  `;
+}
+
 async function loadTelegramStatus() {
   const status = await api("/api/telegram/status");
   if (!status) return;
@@ -1334,6 +1430,7 @@ function setView(view) {
   $("viewUpload").classList.toggle("hidden", view !== "upload");
   $("viewSearch").classList.toggle("hidden", view !== "search");
   $("viewRisk").classList.toggle("hidden", view !== "risk");
+  $("viewMonthlyreport").classList.toggle("hidden", view !== "monthlyreport");
   $("viewCalendar").classList.toggle("hidden", view !== "calendar");
   if (view === "calendar") {
     const frame = document.getElementById("calendarFrame");
@@ -1346,6 +1443,7 @@ function setView(view) {
     dashboard: "대시보드", actions: "액션 / 약속", companies: "고객사",
     candidates: "일정 후보", meetings: "미팅 요약", upload: "미팅 업로드",
     search: "통합 검색", risk: "리스크 / 설정", calendar: "캘린더",
+    monthlyreport: "월간 리포트",
   };
   const titleEl = $("pageTitle");
   if (titleEl) titleEl.textContent = titles[view] || view;
@@ -1361,6 +1459,7 @@ function setView(view) {
   if (view === "upload") resetUploadForm();
   if (view === "meetings") loadMeetings();
   if (view === "risk") loadRisk();
+  if (view === "monthlyreport") initMonthlyReport();
 }
 
 function bindSidebar() {
@@ -1426,6 +1525,22 @@ function bindEvents() {
     window.__searchTimer = setTimeout(runSearch, 350);
   };
   $("riskCompany").onchange = loadRisk;
+  $("reportLoadBtn").onclick = loadMonthlyReport;
+  $("reportSendBtn").onclick = async () => {
+    const ym = $("reportYmSelect").value;
+    if (!ym) return;
+    $("reportSendBtn").disabled = true;
+    $("reportSendBtn").textContent = "전송 중...";
+    try {
+      const result = await api(`/api/workspace/monthly-report/send?year_month=${ym}`, { method: "POST" });
+      alert(result && result.ok ? "텔레그램 전송 완료" : "전송 실패: " + (result?.error || "알 수 없는 오류"));
+    } catch (e) {
+      alert("전송 실패: " + e.message);
+    } finally {
+      $("reportSendBtn").disabled = false;
+      $("reportSendBtn").textContent = "텔레그램 전송";
+    }
+  };
   document.addEventListener("click", async event => {
     const target = event.target;
     if (target.matches("[data-cancel-form]")) target.closest("form").classList.add("hidden");
