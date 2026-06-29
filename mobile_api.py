@@ -341,22 +341,38 @@ def update_company(company_id: int, payload: CompanyPayload, db: Session = Depen
 @app.get("/api/debug/insight-test/{company_id}")
 def debug_insight_test(company_id: int, db: Session = Depends(get_db), year_month: str = "2026-06"):
     """임시 진단 엔드포인트 — 인증 없이 오류 원인 확인용"""
+    result = {}
     try:
         from database.db import create_database
         create_database()
         from sqlalchemy import extract, text
-        # 테이블 존재 확인
-        tables = [r[0] for r in db.execute(text("SELECT name FROM sqlite_master WHERE type='table'")).fetchall()]
-        # 미팅 수 확인
+
+        # meeting_analyses 컬럼 목록
+        ma_cols = [r[1] for r in db.execute(text("PRAGMA table_info(meeting_analyses)")).fetchall()]
+        result["ma_columns"] = ma_cols
+
+        # joinedload 포함 실제 쿼리 테스트
         year, month = int(year_month[:4]), int(year_month[5:7])
-        cnt = db.query(MeetingRecord).filter(
-            MeetingRecord.company_id == company_id,
-            extract("year", MeetingRecord.meeting_date) == year,
-            extract("month", MeetingRecord.meeting_date) == month,
-        ).count()
-        return {"tables": tables, "meeting_count": cnt, "status": "ok"}
+        meetings = (
+            db.query(MeetingRecord)
+            .options(joinedload(MeetingRecord.analysis))
+            .filter(
+                MeetingRecord.company_id == company_id,
+                extract("year", MeetingRecord.meeting_date) == year,
+                extract("month", MeetingRecord.meeting_date) == month,
+            )
+            .all()
+        )
+        result["meeting_count"] = len(meetings)
+        result["summaries"] = [
+            {"date": str(m.meeting_date), "has_analysis": m.analysis is not None,
+             "summary": (m.analysis.one_line_summary or "")[:30] if m.analysis else ""}
+            for m in meetings
+        ]
+        result["status"] = "ok"
     except Exception as e:
-        return {"error": f"{type(e).__name__}: {e}"}
+        result["error"] = f"{type(e).__name__}: {e}"
+    return result
 
 
 @app.get("/api/workspace/hot-companies", dependencies=[Depends(_require_auth)])
