@@ -1027,7 +1027,6 @@ async function loadMeetings() {
 function renderMeetings() {
   if (!state.meetings.length) {
     $("meetingList").innerHTML = `<p class="empty">미팅 기록이 없습니다.</p>`;
-    $("meetingDetail").innerHTML = "";
     return;
   }
   const moodDot = { "긍정적": "🟢", "중립": "🟡", "부정적": "🔴", "혼재": "🟠" };
@@ -1035,19 +1034,66 @@ function renderMeetings() {
     const dot = row.mood_overall ? (moodDot[row.mood_overall] || "") : "";
     const statusLabel = row.has_analysis ? (dot ? `${dot} 분석완료` : "분석완료") : "미분석";
     return `
-    <button class="company-card" data-meeting-open="${row.id}">
-      <strong>${escapeHtml(row.company)}</strong>
-      <span>${escapeHtml([row.meeting_date, row.meeting_type, statusLabel].filter(Boolean).join(" · "))}</span>
-      <small>${escapeHtml(row.summary || "요약 없음")}</small>
-    </button>`;
+    <div class="meeting-item">
+      <button class="company-card" data-meeting-open="${row.id}">
+        <strong>${escapeHtml(row.company)}</strong>
+        <span>${escapeHtml([row.meeting_date, row.meeting_type, statusLabel].filter(Boolean).join(" · "))}</span>
+        <small>${escapeHtml(row.summary || "요약 없음")}</small>
+      </button>
+      <div class="meeting-expand company-expand" hidden></div>
+    </div>`;
   }).join("");
 }
 
+async function toggleMeeting(btn) {
+  const id = String(btn.dataset.meetingOpen);
+  const item = btn.closest(".meeting-item");
+  const expandEl = item.querySelector(".meeting-expand");
+
+  if (!expandEl.hidden) {
+    expandEl.hidden = true;
+    btn.classList.remove("company-card-active");
+    return;
+  }
+
+  if (btn.dataset.loading) return;
+
+  document.querySelectorAll(".meeting-item").forEach(el => {
+    if (el !== item) {
+      el.querySelector(".meeting-expand").hidden = true;
+      el.querySelector(".company-card").classList.remove("company-card-active");
+    }
+  });
+
+  btn.dataset.loading = "1";
+  btn.classList.add("company-card-active");
+  try {
+    const detail = await api(`/api/meetings/${id}`);
+    if (!detail) { btn.classList.remove("company-card-active"); return; }
+    state.selectedMeeting = detail;
+    expandEl.innerHTML = renderMeetingDetail(detail);
+    expandEl.hidden = false;
+    expandEl.scrollIntoView({ behavior: "smooth", block: "nearest" });
+  } catch (e) {
+    btn.classList.remove("company-card-active");
+    alert("로드 실패: " + e.message);
+  } finally {
+    delete btn.dataset.loading;
+  }
+}
+
 async function openMeeting(meetingId) {
-  const detail = await api(`/api/meetings/${meetingId}`);
+  const id = String(meetingId);
+  const btn = document.querySelector(`.company-card[data-meeting-open="${id}"]`);
+  if (btn) {
+    await toggleMeeting(btn);
+    btn.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    return;
+  }
+  // 목록에 없으면 직접 로드 후 목록 갱신
+  const detail = await api(`/api/meetings/${id}`);
   if (!detail) return;
   state.selectedMeeting = detail;
-  $("meetingDetail").innerHTML = renderMeetingDetail(detail);
 }
 
 function listBlock(title, rows, formatter = item => String(item)) {
@@ -1665,8 +1711,8 @@ function bindEvents() {
     }
 
 
-    const meetingOpen = target.closest("[data-meeting-open]")?.dataset.meetingOpen;
-    if (meetingOpen) await openMeeting(meetingOpen);
+    const meetingOpenBtn = target.closest("[data-meeting-open]");
+    if (meetingOpenBtn) await toggleMeeting(meetingOpenBtn);
     const relationSave = target.dataset.relationSave;
     if (relationSave && state.selectedMeeting) {
       await api(`/api/meetings/${state.selectedMeeting.id}/relationship-notes/${relationSave}/save`, { method: "POST" });
@@ -1699,7 +1745,6 @@ function bindEvents() {
     if (meetingDelete && confirm("이 미팅 기록을 삭제할까요? 분석/약속/액션도 함께 삭제됩니다.")) {
       try {
         await api(`/api/meetings/${meetingDelete}`, { method: "DELETE" });
-        $("meetingDetail").innerHTML = "";
         await loadMeetings();
         await loadDashboard();
       } catch (e) {
