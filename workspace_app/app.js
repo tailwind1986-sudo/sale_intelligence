@@ -1697,10 +1697,14 @@ function bindEvents() {
     }
     const meetingDelete = target.dataset.meetingDelete;
     if (meetingDelete && confirm("이 미팅 기록을 삭제할까요? 분석/약속/액션도 함께 삭제됩니다.")) {
-      await api(`/api/meetings/${meetingDelete}`, { method: "DELETE" });
-      $("meetingDetail").innerHTML = "";
-      await loadMeetings();
-      await loadDashboard();
+      try {
+        await api(`/api/meetings/${meetingDelete}`, { method: "DELETE" });
+        $("meetingDetail").innerHTML = "";
+        await loadMeetings();
+        await loadDashboard();
+      } catch (e) {
+        alert("삭제 실패: " + e.message);
+      }
     }
     const searchMeeting = target.closest("[data-search-meeting]")?.dataset.searchMeeting;
     if (searchMeeting) {

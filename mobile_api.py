@@ -2116,6 +2116,10 @@ def delete_meeting(meeting_id: int, db: Session = Depends(get_db)):
     meeting = db.get(MeetingRecord, meeting_id)
     if not meeting:
         raise HTTPException(status_code=404, detail="Meeting not found")
+    # backref 관계(cascade 미설정)인 자식 레코드를 먼저 정리
+    db.query(IssueTag).filter(IssueTag.meeting_id == meeting_id).delete()
+    db.query(SalesSignal).filter(SalesSignal.meeting_id == meeting_id).delete()
+    db.query(CustomerInfo).filter(CustomerInfo.meeting_id == meeting_id).update({"meeting_id": None})
     db.delete(meeting)
     db.commit()
     return {"ok": True}
