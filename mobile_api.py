@@ -2088,7 +2088,9 @@ async def upload_call_record(
         try:
             transcript = transcribe_audio(audio_path, language="ko")
         except Exception as exc:
-            raise HTTPException(status_code=502, detail=f"Audio transcription failed: {type(exc).__name__}") from exc
+            detail = str(exc).strip() or type(exc).__name__
+            print(f"Audio transcription failed: {type(exc).__name__}: {detail[:500]}")
+            raise HTTPException(status_code=502, detail=f"Audio transcription failed: {detail[:500]}") from exc
 
         if not transcript.strip():
             raise HTTPException(status_code=400, detail="Transcription returned empty text")
