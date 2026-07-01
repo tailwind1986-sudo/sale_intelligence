@@ -894,6 +894,40 @@ def _find_contact_by_phone(db: Session, phone_number: str | None) -> Contact | N
     return None
 
 
+def _normalize_contact_name(value: str | None) -> str:
+    cleaned = re.sub(r"\s+", "", value or "")
+    cleaned = re.sub(r"^(통화녹음|통화|녹음)", "", cleaned)
+    return cleaned.strip()
+
+
+def _find_contact_by_name(db: Session, contact_name: str | None) -> Contact | None:
+    normalized = _normalize_contact_name(contact_name)
+    if not normalized:
+        return None
+    contacts = (
+        db.query(Contact)
+        .options(joinedload(Contact.company))
+        .filter(Contact.name != None)
+        .all()
+    )
+    exact_matches = [
+        contact for contact in contacts
+        if _normalize_contact_name(contact.name) == normalized
+    ]
+    if len(exact_matches) == 1:
+        return exact_matches[0]
+
+    contains_matches = [
+        contact for contact in contacts
+        if normalized in _normalize_contact_name(contact.name)
+        or _normalize_contact_name(contact.name) in normalized
+    ]
+    unique_ids = {contact.id for contact in contains_matches}
+    if len(unique_ids) == 1:
+        return contains_matches[0]
+    return None
+
+
 def _get_uncategorized_call_company(db: Session) -> Company:
     company = db.query(Company).filter(Company.name == "Uncategorized Calls").first()
     if company:
@@ -2096,7 +2130,7 @@ async def upload_call_record(
             raise HTTPException(status_code=400, detail="Transcription returned empty text")
 
         ended_at = _parse_call_datetime(call_ended_at)
-        contact = _find_contact_by_phone(db, phone_number)
+        contact = _find_contact_by_phone(db, phone_number) or _find_contact_by_name(db, contact_name)
         company = contact.company if contact and contact.company else _get_uncategorized_call_company(db)
 
         normalized_phone = _normalize_phone(phone_number)

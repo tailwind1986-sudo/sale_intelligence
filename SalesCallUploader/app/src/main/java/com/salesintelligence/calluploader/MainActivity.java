@@ -187,6 +187,7 @@ public class MainActivity extends Activity {
         String displayName = getDisplayName(selectedAudioUri);
         selectedFileText.setText(displayName);
         maybePrefillPhone(displayName);
+        maybePrefillContactName(displayName);
         status(message);
     }
 
@@ -406,6 +407,44 @@ public class MainActivity extends Activity {
             phoneInput.setText(candidate);
             return;
         }
+    }
+
+    private void maybePrefillContactName(String fileName) {
+        String current = contactInput.getText().toString().trim();
+        if (!current.isEmpty()) {
+            return;
+        }
+        String candidate = extractContactNameFromFileName(fileName);
+        if (!candidate.isEmpty()) {
+            contactInput.setText(candidate);
+        }
+    }
+
+    private String extractContactNameFromFileName(String fileName) {
+        String value = fileName == null ? "" : fileName;
+        int dot = value.lastIndexOf('.');
+        if (dot > 0) {
+            value = value.substring(0, dot);
+        }
+        value = value
+                .replace('_', ' ')
+                .replace('-', ' ')
+                .replace('(', ' ')
+                .replace(')', ' ')
+                .replace('[', ' ')
+                .replace(']', ' ')
+                .trim();
+        value = value.replaceFirst("(?i)^call\\s*recording\\s*", "");
+        value = value.replaceFirst("^통화\\s*녹음\\s*", "");
+        value = value.replaceFirst("^통화녹음\\s*", "");
+        value = value.replaceFirst("^녹음\\s*", "");
+        value = value.replaceAll("\\+?\\d[\\d\\s]{5,}\\d", " ");
+        value = value.replaceAll("\\b\\d{4,}\\b", " ");
+        value = value.replaceAll("\\s+", " ").trim();
+        if (value.length() > 30) {
+            value = value.substring(0, 30).trim();
+        }
+        return value;
     }
 
     private String readAll(InputStream stream) throws IOException {
