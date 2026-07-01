@@ -20,9 +20,19 @@ OPENAI_AUDIO_MAX_BYTES = 24 * 1024 * 1024
 DEFAULT_TRANSCRIBE_PROMPT = (
     "Korean phone-call transcription. Preserve natural spoken Korean. "
     "This is for sales and business call notes. Common terms include: "
-    "계약서, 견적서, 발주서, 제안서, 미팅, 회의, 자료, 준비, 고객사, 담당자, "
-    "오전, 오후, 내일, 일정, 회식, 치킨. "
-    "Prefer 계약서 over 대학서 when the context is business documents."
+    "\uacc4\uc57d\uc11c, \uacac\uc801\uc11c, \ubc1c\uc8fc\uc11c, \uc81c\uc548\uc11c, "
+    "\ubbf8\ud305, \ud68c\uc758, \uc790\ub8cc, \uc900\ube44, \uace0\uac1d\uc0ac, \ub2f4\ub2f9\uc790, "
+    "\uc624\uc804, \uc624\ud6c4, \ub0b4\uc77c, \uc77c\uc815, \ud68c\uc2dd, \uce58\ud0a8, \ud2b8\uc704\uce58. "
+    "Prefer \uacc4\uc57d\uc11c over \uc57d\uc11c or \ub300\ud559\uc11c when the context is business documents."
+)
+DEFAULT_CORRECTION_PROMPT = (
+    "You correct Korean speech-to-text errors for phone-call transcripts. "
+    "Do not summarize. Do not add facts. Preserve the speaker's wording and order. "
+    "Only fix obvious recognition errors using context. "
+    "Important glossary: \uacc4\uc57d\uc11c, \uacac\uc801\uc11c, \ubc1c\uc8fc\uc11c, \uc81c\uc548\uc11c, "
+    "\ubbf8\ud305, \uc790\ub8cc, \uc77c\uc815, \ud68c\uc2dd, \ud2b8\uc704\uce58. "
+    "Examples: '\uc57d\uc11c \uc791\uc131' or '\ub300\ud559\uc11c \uc791\uc131' in a business context should be "
+    "'\uacc4\uc57d\uc11c \uc791\uc131'. Return only the corrected transcript."
 )
 
 load_dotenv(APP_DIR / ".env")
@@ -184,6 +194,42 @@ def _transcribe_with_openai(audio_path: Path, language: str) -> str:
         return "\n\n".join(texts).strip()
 
 
+def _correct_transcript(text: str) -> str:
+    value = (text or "").strip()
+    if not value:
+        return value
+    enabled = _get_secret("OPENAI_TRANSCRIPT_CORRECTION_ENABLED", "true").lower()
+    if enabled in {"0", "false", "no", "off"}:
+        return value
+
+    api_key = _get_secret("OPENAI_API_KEY")
+    if not api_key:
+        return value
+
+    model = _get_secret("OPENAI_TRANSCRIPT_CORRECTION_MODEL", "gpt-4.1-mini")
+    prompt = _get_secret("OPENAI_TRANSCRIPT_CORRECTION_PROMPT", DEFAULT_CORRECTION_PROMPT)
+    client = OpenAI(api_key=api_key)
+    try:
+        response = client.chat.completions.create(
+            model=model,
+            messages=[
+                {"role": "system", "content": prompt},
+                {"role": "user", "content": value},
+            ],
+            temperature=0,
+        )
+    except Exception as exc:
+        print(f"Transcript correction failed: {type(exc).__name__}: {str(exc)[:300]}")
+        return value
+
+    corrected = (response.choices[0].message.content or "").strip()
+    if not corrected:
+        return value
+    if len(corrected) > max(len(value) * 3, len(value) + 1000):
+        return value
+    return corrected
+
+
 def transcribe_audio(audio_path: str | Path, language: str = "ko") -> str:
     path = Path(audio_path)
     if not path.exists():
@@ -191,6 +237,6 @@ def transcribe_audio(audio_path: str | Path, language: str = "ko") -> str:
 
     local_text = _transcribe_with_whisper_cpp(path, language)
     if local_text:
-        return local_text
+        return _correct_transcript(local_text)
 
-    return _transcribe_with_openai(path, language)
+    return _correct_transcript(_transcribe_with_openai(path, language))
