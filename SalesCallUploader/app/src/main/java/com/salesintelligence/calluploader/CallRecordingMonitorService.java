@@ -78,6 +78,10 @@ public class CallRecordingMonitorService extends Service {
 
     private void startMonitoring() {
         createNotificationChannels();
+        prefs.edit()
+                .putBoolean("monitoring_enabled", true)
+                .putLong("monitoring_heartbeat_ms", System.currentTimeMillis())
+                .apply();
         startForeground(FOREGROUND_ID, monitorNotification());
         long nowSeconds = System.currentTimeMillis() / 1000L;
         if (!prefs.contains("monitor_last_seen_seconds")) {
@@ -93,11 +97,13 @@ public class CallRecordingMonitorService extends Service {
     private void stopMonitoring() {
         running = false;
         handler.removeCallbacks(pollRunnable);
+        prefs.edit().putBoolean("monitoring_enabled", false).apply();
         stopForeground(true);
         stopSelf();
     }
 
     private void pollForNewRecordings() {
+        prefs.edit().putLong("monitoring_heartbeat_ms", System.currentTimeMillis()).apply();
         Uri baseUri = MediaStore.Audio.Media.EXTERNAL_CONTENT_URI;
         String[] projection = new String[]{
                 MediaStore.Audio.Media._ID,

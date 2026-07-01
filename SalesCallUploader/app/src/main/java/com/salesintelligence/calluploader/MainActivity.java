@@ -60,6 +60,7 @@ public class MainActivity extends Activity {
     private EditText durationInput;
     private TextView selectedFileText;
     private TextView matchedCompanyText;
+    private TextView monitoringStateText;
     private TextView trackedContactsText;
     private TextView statusText;
     private Uri selectedAudioUri;
@@ -101,9 +102,17 @@ public class MainActivity extends Activity {
         prefs = getSharedPreferences("sales_call_uploader", MODE_PRIVATE);
         setContentView(buildContentView());
         loadPrefs();
+        refreshMonitoringStateText();
+        restoreMonitoringIfEnabled();
         refreshTrackedContactsText();
         handleIncomingIntent(getIntent());
         autoSelectLatestRecordingIfAllowed();
+    }
+
+    @Override
+    protected void onResume() {
+        super.onResume();
+        refreshMonitoringStateText();
     }
 
     private View buildContentView() {
@@ -129,6 +138,11 @@ public class MainActivity extends Activity {
         matchedCompanyText.setText("Company: not matched");
         matchedCompanyText.setPadding(0, dp(12), 0, 0);
         root.addView(matchedCompanyText);
+
+        monitoringStateText = new TextView(this);
+        monitoringStateText.setText("Monitoring: OFF");
+        monitoringStateText.setPadding(0, dp(12), 0, 0);
+        root.addView(monitoringStateText);
 
         Button saveButton = addButton(root, "Save Settings");
         saveButton.setOnClickListener(v -> savePrefs());
@@ -225,6 +239,43 @@ public class MainActivity extends Activity {
         findLatestRecording();
     }
 
+    private void restoreMonitoringIfEnabled() {
+        if (!prefs.getBoolean("monitoring_enabled", false)) {
+            return;
+        }
+        if (hasMonitoringPermissions()) {
+            startMonitoring();
+        } else {
+            refreshMonitoringStateText();
+        }
+    }
+
+    private boolean hasMonitoringPermissions() {
+        boolean notificationOk = Build.VERSION.SDK_INT < 33
+                || checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED;
+        boolean audioOk = Build.VERSION.SDK_INT < 23
+                || checkSelfPermission(audioPermission()) == PackageManager.PERMISSION_GRANTED;
+        return notificationOk && audioOk;
+    }
+
+    private void refreshMonitoringStateText() {
+        if (monitoringStateText == null) {
+            return;
+        }
+        boolean enabled = prefs.getBoolean("monitoring_enabled", false);
+        long heartbeat = prefs.getLong("monitoring_heartbeat_ms", 0L);
+        long ageMs = heartbeat == 0L ? Long.MAX_VALUE : System.currentTimeMillis() - heartbeat;
+        if (!enabled) {
+            monitoringStateText.setText("Monitoring: OFF");
+        } else if (!hasMonitoringPermissions()) {
+            monitoringStateText.setText("Monitoring: ON requested / permission needed");
+        } else if (ageMs <= 2L * 60L * 1000L) {
+            monitoringStateText.setText("Monitoring: ON");
+        } else {
+            monitoringStateText.setText("Monitoring: ON requested / restarting");
+        }
+    }
+
     private void pickAudioFile() {
         Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
         intent.addCategory(Intent.CATEGORY_OPENABLE);
@@ -257,6 +308,7 @@ public class MainActivity extends Activity {
     }
 
     private void startMonitoring() {
+        prefs.edit().putBoolean("monitoring_enabled", true).apply();
         Intent intent = new Intent(this, CallRecordingMonitorService.class);
         intent.setAction(CallRecordingMonitorService.ACTION_START);
         if (Build.VERSION.SDK_INT >= 26) {
@@ -264,13 +316,16 @@ public class MainActivity extends Activity {
         } else {
             startService(intent);
         }
+        refreshMonitoringStateText();
         status("Monitoring started. New tracked call recordings will notify you.");
     }
 
     private void stopMonitoring() {
+        prefs.edit().putBoolean("monitoring_enabled", false).apply();
         Intent intent = new Intent(this, CallRecordingMonitorService.class);
         intent.setAction(CallRecordingMonitorService.ACTION_STOP);
         startService(intent);
+        refreshMonitoringStateText();
         status("Monitoring stopped.");
     }
 
