@@ -17,6 +17,13 @@ except ModuleNotFoundError:  # Python 3.10
 
 APP_DIR = Path(__file__).resolve().parents[1]
 OPENAI_AUDIO_MAX_BYTES = 24 * 1024 * 1024
+DEFAULT_TRANSCRIBE_PROMPT = (
+    "Korean phone-call transcription. Preserve natural spoken Korean. "
+    "This is for sales and business call notes. Common terms include: "
+    "계약서, 견적서, 발주서, 제안서, 미팅, 회의, 자료, 준비, 고객사, 담당자, "
+    "오전, 오후, 내일, 일정, 회식, 치킨. "
+    "Prefer 계약서 over 대학서 when the context is business documents."
+)
 
 load_dotenv(APP_DIR / ".env")
 load_dotenv()
@@ -152,7 +159,8 @@ def _transcribe_with_openai(audio_path: Path, language: str) -> str:
     if not api_key:
         raise RuntimeError("OPENAI_API_KEY is not configured.")
 
-    model = _get_secret("OPENAI_TRANSCRIBE_MODEL", "whisper-1")
+    model = _get_secret("OPENAI_TRANSCRIBE_MODEL", "gpt-4o-transcribe")
+    prompt = _get_secret("OPENAI_TRANSCRIBE_PROMPT", DEFAULT_TRANSCRIBE_PROMPT)
     client = OpenAI(api_key=api_key)
     with tempfile.TemporaryDirectory(prefix="stt_", dir=str(audio_path.parent)) as tmp:
         work_dir = Path(tmp)
@@ -164,6 +172,7 @@ def _transcribe_with_openai(audio_path: Path, language: str) -> str:
                     model=model,
                     file=audio_file,
                     language=language,
+                    prompt=prompt,
                     response_format="text",
                 )
             text = str(result).strip()
