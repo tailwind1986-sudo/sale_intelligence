@@ -141,6 +141,11 @@ public class CallRecordingMonitorService extends Service {
                 }
                 long id = cursor.getLong(idCol);
                 Uri audioUri = ContentUris.withAppendedId(MediaStore.Audio.Media.EXTERNAL_CONTENT_URI, id);
+                String notificationKey = buildNotificationKey(audioUri, name, modified);
+                if (wasNotified(notificationKey)) {
+                    continue;
+                }
+                rememberNotified(notificationKey);
                 notifyTrackedRecording(audioUri, name, match);
             }
         } catch (Exception ignored) {
@@ -261,6 +266,41 @@ public class CallRecordingMonitorService extends Service {
             }
         }
         return null;
+    }
+
+    private String buildNotificationKey(Uri uri, String fileName, long modified) {
+        return (fileName == null ? "" : fileName) + "|" + modified + "|" + uri.toString();
+    }
+
+    private boolean wasNotified(String key) {
+        JSONArray rows = notifiedKeysJson();
+        for (int i = 0; i < rows.length(); i++) {
+            if (key.equals(rows.optString(i, ""))) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private void rememberNotified(String key) {
+        JSONArray oldRows = notifiedKeysJson();
+        JSONArray rows = new JSONArray();
+        rows.put(key);
+        for (int i = 0; i < oldRows.length() && rows.length() < 100; i++) {
+            String old = oldRows.optString(i, "");
+            if (!old.isEmpty() && !key.equals(old)) {
+                rows.put(old);
+            }
+        }
+        prefs.edit().putString("notified_recording_keys", rows.toString()).apply();
+    }
+
+    private JSONArray notifiedKeysJson() {
+        try {
+            return new JSONArray(prefs.getString("notified_recording_keys", "[]"));
+        } catch (Exception e) {
+            return new JSONArray();
+        }
     }
 
     private TrackedMatch trackedMatch(JSONObject row) {

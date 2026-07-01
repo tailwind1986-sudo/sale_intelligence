@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import hmac
+import json
 import os
 import re
 import tempfile
@@ -44,6 +45,7 @@ APP_DIR = Path(__file__).parent
 STATIC_DIR = APP_DIR / "mobile_calendar"
 WORKSPACE_DIR = APP_DIR / "workspace_app"
 CALL_UPLOAD_DIR = APP_DIR / "data" / "call_uploads"
+TRACKED_CONTACTS_PATH = APP_DIR / "data" / "mobile_tracked_contacts.json"
 
 
 def _read_secret_file(path: Path) -> dict:
@@ -175,6 +177,17 @@ class ContactPayload(BaseModel):
     notes: str | None = None
 
 
+class TrackedContactPayload(BaseModel):
+    name: str = ""
+    phone: str = ""
+    company_id: int
+    company_name: str = ""
+
+
+class TrackedContactsPayload(BaseModel):
+    contacts: list[TrackedContactPayload] = []
+
+
 class CustomerInfoPayload(BaseModel):
     company_id: int
     contact_id: int | None = None
@@ -277,6 +290,47 @@ def login(payload: LoginPayload):
 def companies(db: Session = Depends(get_db)):
     rows = db.query(Company).order_by(Company.name).all()
     return [{"id": c.id, "name": c.name} for c in rows]
+
+
+@app.get("/api/mobile/tracked-contacts", dependencies=[Depends(_require_auth)])
+def get_mobile_tracked_contacts():
+    if not TRACKED_CONTACTS_PATH.exists():
+        return {"contacts": []}
+    try:
+        data = json.loads(TRACKED_CONTACTS_PATH.read_text(encoding="utf-8"))
+    except Exception:
+        return {"contacts": []}
+    contacts = data.get("contacts") if isinstance(data, dict) else []
+    if not isinstance(contacts, list):
+        contacts = []
+    return {"contacts": contacts}
+
+
+@app.put("/api/mobile/tracked-contacts", dependencies=[Depends(_require_auth)])
+def put_mobile_tracked_contacts(payload: TrackedContactsPayload, db: Session = Depends(get_db)):
+    rows: list[dict] = []
+    seen: set[tuple[str, str, int]] = set()
+    for item in payload.contacts[:500]:
+        company = db.get(Company, item.company_id)
+        if not company:
+            continue
+        name = (item.name or "").strip()
+        phone = (item.phone or "").strip()
+        if not name and not phone:
+            continue
+        key = (name.lower(), re.sub(r"\D+", "", phone), company.id)
+        if key in seen:
+            continue
+        seen.add(key)
+        rows.append({
+            "name": name,
+            "phone": phone,
+            "company_id": company.id,
+            "company_name": company.name,
+        })
+    TRACKED_CONTACTS_PATH.parent.mkdir(parents=True, exist_ok=True)
+    TRACKED_CONTACTS_PATH.write_text(json.dumps({"contacts": rows}, ensure_ascii=False, indent=2), encoding="utf-8")
+    return {"ok": True, "contacts": rows}
 
 
 @app.get("/api/workspace/companies", dependencies=[Depends(_require_auth)])

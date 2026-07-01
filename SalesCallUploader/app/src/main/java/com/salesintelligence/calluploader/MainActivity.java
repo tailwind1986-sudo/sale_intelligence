@@ -63,8 +63,11 @@ public class MainActivity extends Activity {
     private TextView trackedContactsText;
     private TextView statusText;
     private Uri selectedAudioUri;
+    private String selectedFileName = "";
+    private String selectedFileKey = "";
     private int selectedCompanyId = 0;
     private String selectedCompanyName = "";
+    private String selectedMatchSource = "";
     private boolean pendingMonitorStart = false;
     private SharedPreferences prefs;
 
@@ -100,6 +103,7 @@ public class MainActivity extends Activity {
         loadPrefs();
         refreshTrackedContactsText();
         handleIncomingIntent(getIntent());
+        autoSelectLatestRecordingIfAllowed();
     }
 
     private View buildContentView() {
@@ -135,6 +139,9 @@ public class MainActivity extends Activity {
         Button removeTrackedButton = addButton(root, "Remove Tracked Contact");
         removeTrackedButton.setOnClickListener(v -> showTrackedContactRemover());
 
+        Button syncTrackedButton = addButton(root, "Sync Tracked Contacts");
+        syncTrackedButton.setOnClickListener(v -> showTrackedContactsSyncDialog());
+
         trackedContactsText = new TextView(this);
         trackedContactsText.setPadding(0, dp(10), 0, dp(4));
         root.addView(trackedContactsText);
@@ -158,6 +165,9 @@ public class MainActivity extends Activity {
 
         Button uploadButton = addButton(root, "Upload And Analyze");
         uploadButton.setOnClickListener(v -> uploadSelectedFile());
+
+        Button historyButton = addButton(root, "Upload History");
+        historyButton.setOnClickListener(v -> showUploadHistory());
 
         statusText = new TextView(this);
         statusText.setText("Ready");
@@ -203,6 +213,16 @@ public class MainActivity extends Activity {
                 .putString("token", tokenInput.getText().toString().trim())
                 .apply();
         toast("Saved");
+    }
+
+    private void autoSelectLatestRecordingIfAllowed() {
+        if (selectedAudioUri != null) {
+            return;
+        }
+        if (Build.VERSION.SDK_INT >= 23 && checkSelfPermission(audioPermission()) != PackageManager.PERMISSION_GRANTED) {
+            return;
+        }
+        findLatestRecording();
     }
 
     private void pickAudioFile() {
@@ -314,6 +334,8 @@ public class MainActivity extends Activity {
         } catch (SecurityException ignored) {
         }
         String displayName = getDisplayName(selectedAudioUri);
+        selectedFileName = displayName;
+        selectedFileKey = buildFileKey(selectedAudioUri, displayName);
         selectedFileText.setText(displayName);
         prefillFromFileName(displayName);
         applyTrackedContactMatch();
@@ -515,6 +537,71 @@ public class MainActivity extends Activity {
         status("Tracked contact removed: " + displayContact(contact.name, contact.phone));
     }
 
+    private void showTrackedContactsSyncDialog() {
+        savePrefs();
+        String[] actions = new String[]{"Back Up To Server", "Restore From Server"};
+        new AlertDialog.Builder(this)
+                .setTitle("Sync tracked contacts")
+                .setItems(actions, (dialog, which) -> {
+                    if (which == 0) {
+                        uploadTrackedContactsToServer();
+                    } else {
+                        downloadTrackedContactsFromServer();
+                    }
+                })
+                .setNegativeButton("Cancel", null)
+                .show();
+    }
+
+    private void uploadTrackedContactsToServer() {
+        String serverUrl = trimTrailingSlash(serverUrlInput.getText().toString().trim());
+        String token = tokenInput.getText().toString().trim();
+        if (serverUrl.isEmpty() || token.isEmpty()) {
+            status("Server URL and bearer token are required.");
+            return;
+        }
+        status("Backing up tracked contacts...");
+        new Thread(() -> {
+            try {
+                JSONObject payload = new JSONObject();
+                payload.put("contacts", trackedContactsJson());
+                String response = apiJson(serverUrl + "/api/mobile/tracked-contacts", "PUT", token, payload.toString());
+                runOnUiThread(() -> status("Tracked contacts backed up: " + response));
+            } catch (Exception e) {
+                runOnUiThread(() -> status("Backup failed: " + e.getMessage()));
+            }
+        }).start();
+    }
+
+    private void downloadTrackedContactsFromServer() {
+        String serverUrl = trimTrailingSlash(serverUrlInput.getText().toString().trim());
+        String token = tokenInput.getText().toString().trim();
+        if (serverUrl.isEmpty() || token.isEmpty()) {
+            status("Server URL and bearer token are required.");
+            return;
+        }
+        status("Restoring tracked contacts...");
+        new Thread(() -> {
+            try {
+                String response = apiJson(serverUrl + "/api/mobile/tracked-contacts", "GET", token, null);
+                JSONObject payload = new JSONObject(response);
+                JSONArray contacts = payload.optJSONArray("contacts");
+                if (contacts == null) {
+                    contacts = new JSONArray();
+                }
+                JSONArray finalContacts = contacts;
+                prefs.edit().putString("tracked_contacts", finalContacts.toString()).apply();
+                runOnUiThread(() -> {
+                    refreshTrackedContactsText();
+                    applyTrackedContactMatch();
+                    status("Tracked contacts restored: " + finalContacts.length());
+                });
+            } catch (Exception e) {
+                runOnUiThread(() -> status("Restore failed: " + e.getMessage()));
+            }
+        }).start();
+    }
+
     private JSONArray trackedContactsJson() {
         try {
             return new JSONArray(prefs.getString("tracked_contacts", "[]"));
@@ -571,6 +658,7 @@ public class MainActivity extends Activity {
         if (matched == null) {
             selectedCompanyId = 0;
             selectedCompanyName = "";
+            selectedMatchSource = "";
             updateMatchedCompanyText();
             return;
         }
@@ -588,6 +676,7 @@ public class MainActivity extends Activity {
     private TrackedContact findTrackedContact(String phone, String name) {
         for (TrackedContact contact : trackedContacts()) {
             if (phonesMatch(phone, contact.phone)) {
+                selectedMatchSource = "phone";
                 return contact;
             }
         }
@@ -598,6 +687,7 @@ public class MainActivity extends Activity {
         for (TrackedContact contact : trackedContacts()) {
             String candidate = safe(contact.name).trim();
             if (!candidate.isEmpty() && (candidate.equals(needle) || needle.contains(candidate) || candidate.contains(needle))) {
+                selectedMatchSource = "contact name";
                 return contact;
             }
         }
@@ -609,7 +699,8 @@ public class MainActivity extends Activity {
             return;
         }
         if (selectedCompanyId > 0) {
-            matchedCompanyText.setText("Company: " + selectedCompanyName + " (#" + selectedCompanyId + ")");
+            String source = selectedMatchSource.isEmpty() ? "" : " / matched by " + selectedMatchSource;
+            matchedCompanyText.setText("Company: " + selectedCompanyName + " (#" + selectedCompanyId + ")" + source);
         } else {
             matchedCompanyText.setText("Company: not matched");
         }
@@ -746,15 +837,21 @@ public class MainActivity extends Activity {
             return;
         }
         applyTrackedContactMatch();
+        if (isUploadedFile(selectedFileKey)) {
+            confirmDuplicateUpload(serverUrl, token);
+            return;
+        }
         confirmUpload(serverUrl, token);
     }
 
     private void confirmUpload(String serverUrl, String token) {
         String company = selectedCompanyId > 0 ? selectedCompanyName + " (#" + selectedCompanyId + ")" : "not matched";
+        String source = selectedMatchSource.isEmpty() ? "none" : selectedMatchSource;
         String message = "File: " + selectedFileText.getText()
                 + "\nContact: " + contactInput.getText().toString().trim()
                 + "\nPhone: " + phoneInput.getText().toString().trim()
                 + "\nCompany: " + company
+                + "\nMatched by: " + source
                 + "\n\nUpload and analyze this call?";
         new AlertDialog.Builder(this)
                 .setTitle("Confirm upload")
@@ -764,16 +861,121 @@ public class MainActivity extends Activity {
                 .show();
     }
 
+    private void confirmDuplicateUpload(String serverUrl, String token) {
+        new AlertDialog.Builder(this)
+                .setTitle("Already uploaded")
+                .setMessage("This recording is already in the upload history.\n\nUpload again anyway?")
+                .setPositiveButton("Upload Again", (dialog, which) -> confirmUpload(serverUrl, token))
+                .setNegativeButton("Cancel", null)
+                .show();
+    }
+
     private void doUpload(String serverUrl, String token) {
         status("Uploading...");
         new Thread(() -> {
             try {
                 String response = uploadMultipart(serverUrl, token);
-                runOnUiThread(() -> status("Done: " + response));
+                recordUploadSuccess(response);
+                runOnUiThread(() -> {
+                    status("Done: " + response);
+                    refreshTrackedContactsText();
+                });
             } catch (Exception e) {
                 runOnUiThread(() -> status("Failed: " + e.getMessage()));
             }
         }).start();
+    }
+
+    private void recordUploadSuccess(String response) {
+        JSONArray history = uploadHistoryJson();
+        JSONArray updated = new JSONArray();
+        JSONObject row = new JSONObject();
+        try {
+            row.put("file_key", selectedFileKey);
+            row.put("file_name", selectedFileName);
+            row.put("contact_name", contactInput.getText().toString().trim());
+            row.put("phone", phoneInput.getText().toString().trim());
+            row.put("company_id", selectedCompanyId);
+            row.put("company_name", selectedCompanyName);
+            row.put("matched_by", selectedMatchSource);
+            row.put("uploaded_at", OffsetDateTime.now().toString());
+            row.put("response", response);
+            try {
+                JSONObject parsed = new JSONObject(response);
+                row.put("meeting_id", parsed.optInt("meeting_id", parsed.optInt("id", 0)));
+            } catch (JSONException ignored) {
+            }
+            updated.put(row);
+            for (int i = 0; i < history.length() && updated.length() < 50; i++) {
+                JSONObject old = history.optJSONObject(i);
+                if (old == null) {
+                    continue;
+                }
+                if (!selectedFileKey.isEmpty() && selectedFileKey.equals(old.optString("file_key", ""))) {
+                    continue;
+                }
+                updated.put(old);
+            }
+            prefs.edit().putString("upload_history", updated.toString()).apply();
+        } catch (JSONException ignored) {
+        }
+    }
+
+    private void showUploadHistory() {
+        JSONArray history = uploadHistoryJson();
+        if (history.length() == 0) {
+            status("Upload history: none");
+            return;
+        }
+        StringBuilder builder = new StringBuilder();
+        for (int i = 0; i < history.length(); i++) {
+            JSONObject row = history.optJSONObject(i);
+            if (row == null) {
+                continue;
+            }
+            builder.append(i + 1)
+                    .append(". ")
+                    .append(row.optString("file_name", ""))
+                    .append("\n")
+                    .append(row.optString("contact_name", ""))
+                    .append(" -> ")
+                    .append(row.optString("company_name", ""))
+                    .append(" (#")
+                    .append(row.optInt("company_id", 0))
+                    .append(")")
+                    .append("\nMeeting: ")
+                    .append(row.optInt("meeting_id", 0))
+                    .append("\n")
+                    .append(row.optString("uploaded_at", ""))
+                    .append("\n\n");
+        }
+        new AlertDialog.Builder(this)
+                .setTitle("Upload History")
+                .setMessage(builder.toString().trim())
+                .setPositiveButton("OK", null)
+                .show();
+    }
+
+    private boolean isUploadedFile(String fileKey) {
+        if (fileKey == null || fileKey.trim().isEmpty()) {
+            return false;
+        }
+        JSONArray history = uploadHistoryJson();
+        for (int i = 0; i < history.length(); i++) {
+            JSONObject row = history.optJSONObject(i);
+            if (row != null && fileKey.equals(row.optString("file_key", ""))) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private JSONArray uploadHistoryJson() {
+        try {
+            return new JSONArray(prefs.getString("upload_history", "[]"));
+        } catch (JSONException e) {
+            return new JSONArray();
+        }
     }
 
     private String uploadMultipart(String serverUrl, String token) throws IOException {
@@ -862,6 +1064,28 @@ public class MainActivity extends Activity {
         } catch (Exception ignored) {
         }
         return fallback;
+    }
+
+    private String buildFileKey(Uri uri, String displayName) {
+        long size = -1L;
+        long modified = -1L;
+        try (Cursor cursor = getContentResolver().query(uri, null, null, null, null)) {
+            if (cursor != null && cursor.moveToFirst()) {
+                int sizeCol = cursor.getColumnIndex(OpenableColumns.SIZE);
+                if (sizeCol >= 0) {
+                    size = cursor.getLong(sizeCol);
+                }
+                int modifiedCol = cursor.getColumnIndex(MediaStore.MediaColumns.DATE_MODIFIED);
+                if (modifiedCol >= 0) {
+                    modified = cursor.getLong(modifiedCol);
+                }
+            }
+        } catch (Exception ignored) {
+        }
+        if (size >= 0 || modified >= 0) {
+            return safe(displayName) + "|" + size + "|" + modified;
+        }
+        return safe(displayName) + "|" + uri.toString();
     }
 
     private void prefillFromFileName(String fileName) {
@@ -985,6 +1209,28 @@ public class MainActivity extends Activity {
             builder.append(new String(buffer, 0, read, StandardCharsets.UTF_8));
         }
         return builder.toString();
+    }
+
+    private String apiJson(String urlValue, String method, String token, String body) throws IOException {
+        HttpURLConnection conn = (HttpURLConnection) new URL(urlValue).openConnection();
+        conn.setRequestMethod(method);
+        conn.setConnectTimeout(30000);
+        conn.setReadTimeout(30000);
+        conn.setRequestProperty("Authorization", "Bearer " + token);
+        if (body != null) {
+            conn.setDoOutput(true);
+            conn.setRequestProperty("Content-Type", "application/json; charset=utf-8");
+            try (OutputStream out = conn.getOutputStream()) {
+                out.write(body.getBytes(StandardCharsets.UTF_8));
+            }
+        }
+        int code = conn.getResponseCode();
+        InputStream stream = code >= 200 && code < 300 ? conn.getInputStream() : conn.getErrorStream();
+        String response = readAll(stream);
+        if (code < 200 || code >= 300) {
+            throw new IOException("HTTP " + code + " " + response);
+        }
+        return response;
     }
 
     private String trimTrailingSlash(String value) {
