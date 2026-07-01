@@ -1655,10 +1655,16 @@ function bindEvents() {
     if (companyEdit) showCompanyForm(state.selectedCompany);
     const companyDelete = target.dataset.companyDelete;
     if (companyDelete && confirm("이 고객사를 삭제할까요? 관련 미팅/약속/액션도 함께 삭제됩니다.")) {
-      await api(`/api/workspace/companies/${companyDelete}`, { method: "DELETE" });
-      $("companyDetail").innerHTML = "";
-      await refreshCompanyOptions();
-      await loadCompanies();
+      try {
+        await api(`/api/workspace/companies/${companyDelete}`, { method: "DELETE" });
+        state.selectedCompany = null;
+        $("companyDetail").innerHTML = "";
+        await refreshCompanyOptions();
+        await loadCompanies();
+        await loadDashboard();
+      } catch (e) {
+        alert("고객사 삭제 실패: " + e.message);
+      }
     }
     const contactNew = target.dataset.contactNew;
     if (contactNew) showContactForm();
@@ -1944,4 +1950,3 @@ $("saveCategoryBtn").onclick = async () => {
 };
 
 function escHtml(s) { return String(s || "").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;"); }
-

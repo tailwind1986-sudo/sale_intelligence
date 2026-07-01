@@ -477,8 +477,21 @@ def delete_company(company_id: int, db: Session = Depends(get_db)):
     row = db.get(Company, company_id)
     if not row:
         raise HTTPException(status_code=404, detail="Company not found")
-    db.delete(row)
-    db.commit()
+    try:
+        db.query(IssueTag).filter(IssueTag.company_id == company_id).delete(synchronize_session=False)
+        db.query(SalesSignal).filter(SalesSignal.company_id == company_id).delete(synchronize_session=False)
+        db.query(CompanyHistory).filter(CompanyHistory.company_id == company_id).delete(synchronize_session=False)
+        db.query(MonthlyInsight).filter(MonthlyInsight.company_id == company_id).delete(synchronize_session=False)
+        db.query(CustomerInfo).filter(CustomerInfo.company_id == company_id).delete(synchronize_session=False)
+        db.query(Schedule).filter(Schedule.company_id == company_id).update(
+            {"company_id": None},
+            synchronize_session=False,
+        )
+        db.delete(row)
+        db.commit()
+    except Exception as exc:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"Company delete failed: {type(exc).__name__}: {exc}")
     return {"ok": True}
 
 
