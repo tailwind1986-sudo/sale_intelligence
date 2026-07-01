@@ -2106,6 +2106,7 @@ async def upload_call_record(
     phone_number: str = Form(""),
     call_ended_at: str = Form(""),
     contact_name: str = Form(""),
+    company_id: int | None = Form(default=None),
     duration_seconds: int = Form(0),
     run_ai: bool = Form(True),
     file: UploadFile = File(...),
@@ -2131,7 +2132,9 @@ async def upload_call_record(
 
         ended_at = _parse_call_datetime(call_ended_at)
         contact = _find_contact_by_phone(db, phone_number) or _find_contact_by_name(db, contact_name)
-        company = contact.company if contact and contact.company else _get_uncategorized_call_company(db)
+        company = db.get(Company, company_id) if company_id else None
+        if not company:
+            company = contact.company if contact and contact.company else _get_uncategorized_call_company(db)
 
         normalized_phone = _normalize_phone(phone_number)
         attendees = (contact_name or (contact.name if contact else "") or normalized_phone or "Phone call").strip()
@@ -2140,6 +2143,7 @@ async def upload_call_record(
             f"Phone: {phone_number or '-'}",
             f"Normalized phone: {normalized_phone or '-'}",
             f"Contact: {contact_name or (contact.name if contact else '-')}",
+            f"Requested company id: {company_id if company_id else '-'}",
             f"Duration seconds: {max(duration_seconds, 0)}",
             f"Matched contact id: {contact.id if contact else '-'}",
         ]
