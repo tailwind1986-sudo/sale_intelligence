@@ -1,12 +1,17 @@
 package com.salesintelligence.calluploader;
 
+import android.Manifest;
 import android.app.Activity;
+import android.content.ContentUris;
 import android.content.ContentResolver;
 import android.content.Intent;
 import android.content.SharedPreferences;
+import android.content.pm.PackageManager;
 import android.database.Cursor;
 import android.net.Uri;
+import android.os.Build;
 import android.os.Bundle;
+import android.provider.MediaStore;
 import android.provider.OpenableColumns;
 import android.view.Gravity;
 import android.view.View;
@@ -26,9 +31,13 @@ import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import java.time.OffsetDateTime;
 import java.util.UUID;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 public class MainActivity extends Activity {
     private static final int REQ_PICK_AUDIO = 1001;
+    private static final int REQ_AUDIO_PERMISSION = 1002;
+    private static final String SAMPLE_PHONE = "01012345678";
 
     private EditText serverUrlInput;
     private EditText tokenInput;
@@ -46,6 +55,7 @@ public class MainActivity extends Activity {
         prefs = getSharedPreferences("sales_call_uploader", MODE_PRIVATE);
         setContentView(buildContentView());
         loadPrefs();
+        handleIncomingIntent(getIntent());
     }
 
     private View buildContentView() {
@@ -72,6 +82,9 @@ public class MainActivity extends Activity {
 
         Button pickButton = addButton(root, "Select Recording File");
         pickButton.setOnClickListener(v -> pickAudioFile());
+
+        Button latestButton = addButton(root, "Find Latest Call Recording");
+        latestButton.setOnClickListener(v -> findLatestRecordingWithPermission());
 
         selectedFileText = new TextView(this);
         selectedFileText.setText("No file selected");
@@ -115,7 +128,7 @@ public class MainActivity extends Activity {
     }
 
     private void loadPrefs() {
-        serverUrlInput.setText(prefs.getString("server_url", ""));
+        serverUrlInput.setText(prefs.getString("server_url", "https://161.33.148.67.sslip.io"));
         tokenInput.setText(prefs.getString("token", ""));
     }
 
@@ -136,18 +149,137 @@ public class MainActivity extends Activity {
     }
 
     @Override
+    protected void onNewIntent(Intent intent) {
+        super.onNewIntent(intent);
+        setIntent(intent);
+        handleIncomingIntent(intent);
+    }
+
+    private void handleIncomingIntent(Intent intent) {
+        if (intent == null || !Intent.ACTION_SEND.equals(intent.getAction())) {
+            return;
+        }
+        Uri uri = intent.getParcelableExtra(Intent.EXTRA_STREAM);
+        if (uri == null) {
+            return;
+        }
+        selectAudioUri(uri, "Shared recording selected", intent.getFlags());
+    }
+
+    @Override
     protected void onActivityResult(int requestCode, int resultCode, Intent data) {
         super.onActivityResult(requestCode, resultCode, data);
         if (requestCode != REQ_PICK_AUDIO || resultCode != RESULT_OK || data == null || data.getData() == null) {
             return;
         }
-        selectedAudioUri = data.getData();
-        int flags = data.getFlags() & Intent.FLAG_GRANT_READ_URI_PERMISSION;
+        selectAudioUri(data.getData(), "Recording selected", data.getFlags());
+    }
+
+    private void selectAudioUri(Uri uri, String message, int grantFlags) {
+        selectedAudioUri = uri;
+        int flags = grantFlags & Intent.FLAG_GRANT_READ_URI_PERMISSION;
         try {
-            getContentResolver().takePersistableUriPermission(selectedAudioUri, flags);
+            if (flags != 0) {
+                getContentResolver().takePersistableUriPermission(selectedAudioUri, flags);
+            }
         } catch (SecurityException ignored) {
         }
-        selectedFileText.setText(getDisplayName(selectedAudioUri));
+        String displayName = getDisplayName(selectedAudioUri);
+        selectedFileText.setText(displayName);
+        maybePrefillPhone(displayName);
+        status(message);
+    }
+
+    private void findLatestRecordingWithPermission() {
+        if (Build.VERSION.SDK_INT < 23 || checkSelfPermission(audioPermission()) == PackageManager.PERMISSION_GRANTED) {
+            findLatestRecording();
+            return;
+        }
+        requestPermissions(new String[]{audioPermission()}, REQ_AUDIO_PERMISSION);
+    }
+
+    @Override
+    public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] grantResults) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults);
+        if (requestCode != REQ_AUDIO_PERMISSION) {
+            return;
+        }
+        if (grantResults.length > 0 && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
+            findLatestRecording();
+        } else {
+            status("Audio permission denied. Use Select Recording File instead.");
+        }
+    }
+
+    private String audioPermission() {
+        if (Build.VERSION.SDK_INT >= 33) {
+            return Manifest.permission.READ_MEDIA_AUDIO;
+        }
+        return Manifest.permission.READ_EXTERNAL_STORAGE;
+    }
+
+    private void findLatestRecording() {
+        Uri uri = MediaStore.Audio.Media.EXTERNAL_CONTENT_URI;
+        String[] projection = new String[]{
+                MediaStore.Audio.Media._ID,
+                MediaStore.Audio.Media.DISPLAY_NAME,
+                MediaStore.Audio.Media.DATE_MODIFIED,
+                MediaStore.Audio.Media.MIME_TYPE,
+                Build.VERSION.SDK_INT >= 29 ? MediaStore.Audio.Media.RELATIVE_PATH : MediaStore.Audio.Media.DATA
+        };
+        String sort = MediaStore.Audio.Media.DATE_MODIFIED + " DESC";
+        Uri bestUri = null;
+        String bestName = "";
+        try (Cursor cursor = getContentResolver().query(uri, projection, null, null, sort)) {
+            if (cursor == null) {
+                status("Cannot read audio library. Use Select Recording File.");
+                return;
+            }
+            int idCol = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media._ID);
+            int nameCol = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.DISPLAY_NAME);
+            int mimeCol = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.MIME_TYPE);
+            int pathCol = cursor.getColumnIndex(projection[4]);
+            Uri fallbackUri = null;
+            String fallbackName = "";
+            int checked = 0;
+            while (cursor.moveToNext() && checked < 200) {
+                checked++;
+                long id = cursor.getLong(idCol);
+                String name = cursor.getString(nameCol);
+                String mime = cursor.getString(mimeCol);
+                String path = pathCol >= 0 ? cursor.getString(pathCol) : "";
+                Uri candidate = ContentUris.withAppendedId(MediaStore.Audio.Media.EXTERNAL_CONTENT_URI, id);
+                if (fallbackUri == null && mime != null && mime.startsWith("audio/")) {
+                    fallbackUri = candidate;
+                    fallbackName = name;
+                }
+                if (isLikelyCallRecording(name, path)) {
+                    bestUri = candidate;
+                    bestName = name;
+                    break;
+                }
+            }
+            if (bestUri == null) {
+                bestUri = fallbackUri;
+                bestName = fallbackName;
+            }
+        } catch (Exception e) {
+            status("Latest recording lookup failed: " + e.getMessage());
+            return;
+        }
+        if (bestUri == null) {
+            status("No audio file found. Use Select Recording File.");
+            return;
+        }
+        selectAudioUri(bestUri, "Latest recording selected: " + bestName, Intent.FLAG_GRANT_READ_URI_PERMISSION);
+    }
+
+    private boolean isLikelyCallRecording(String name, String path) {
+        String value = ((name == null ? "" : name) + " " + (path == null ? "" : path)).toLowerCase();
+        return value.contains("통화")
+                || value.contains("call")
+                || value.contains("recording")
+                || value.contains("recordings");
     }
 
     private void uploadSelectedFile() {
@@ -189,7 +321,7 @@ public class MainActivity extends Activity {
         try (OutputStream out = conn.getOutputStream()) {
             writeField(out, boundary, "phone_number", phoneInput.getText().toString().trim());
             writeField(out, boundary, "contact_name", contactInput.getText().toString().trim());
-            writeField(out, boundary, "duration_seconds", durationInput.getText().toString().trim());
+            writeField(out, boundary, "duration_seconds", sanitizedDurationSeconds());
             writeField(out, boundary, "call_ended_at", OffsetDateTime.now().toString());
             writeFile(out, boundary, "file", selectedAudioUri);
             out.write(("--" + boundary + "--\r\n").getBytes(StandardCharsets.UTF_8));
@@ -202,6 +334,15 @@ public class MainActivity extends Activity {
             throw new IOException("HTTP " + code + " " + body);
         }
         return body;
+    }
+
+    private String sanitizedDurationSeconds() {
+        String value = durationInput.getText().toString().trim();
+        if (value.matches("\\d+")) {
+            return value;
+        }
+        durationInput.setText("0");
+        return "0";
     }
 
     private void writeField(OutputStream out, String boundary, String name, String value) throws IOException {
@@ -249,6 +390,22 @@ public class MainActivity extends Activity {
         } catch (Exception ignored) {
         }
         return fallback;
+    }
+
+    private void maybePrefillPhone(String fileName) {
+        String current = phoneInput.getText().toString().trim();
+        if (!current.isEmpty() && !SAMPLE_PHONE.equals(current)) {
+            return;
+        }
+        Matcher matcher = Pattern.compile("(\\d{8,15})").matcher(fileName == null ? "" : fileName);
+        while (matcher.find()) {
+            String candidate = matcher.group(1);
+            if (candidate.length() == 6 || candidate.length() == 4) {
+                continue;
+            }
+            phoneInput.setText(candidate);
+            return;
+        }
     }
 
     private String readAll(InputStream stream) throws IOException {
