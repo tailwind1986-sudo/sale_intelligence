@@ -43,10 +43,14 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 public class MainActivity extends Activity {
+    public static final String ACTION_REVIEW_RECORDING = "com.salesintelligence.calluploader.REVIEW_RECORDING";
+    public static final String EXTRA_AUDIO_URI = "audio_uri";
+
     private static final int REQ_PICK_AUDIO = 1001;
     private static final int REQ_AUDIO_PERMISSION = 1002;
     private static final int REQ_CONTACT_PERMISSION = 1003;
     private static final int REQ_PICK_CONTACT = 1004;
+    private static final int REQ_NOTIFICATION_PERMISSION = 1005;
     private static final String SAMPLE_PHONE = "01012345678";
 
     private EditText serverUrlInput;
@@ -61,6 +65,7 @@ public class MainActivity extends Activity {
     private Uri selectedAudioUri;
     private int selectedCompanyId = 0;
     private String selectedCompanyName = "";
+    private boolean pendingMonitorStart = false;
     private SharedPreferences prefs;
 
     private static class CompanyOption {
@@ -133,6 +138,12 @@ public class MainActivity extends Activity {
         trackedContactsText = new TextView(this);
         trackedContactsText.setPadding(0, dp(10), 0, dp(4));
         root.addView(trackedContactsText);
+
+        Button startMonitorButton = addButton(root, "Start Monitoring");
+        startMonitorButton.setOnClickListener(v -> startMonitoringWithPermissions());
+
+        Button stopMonitorButton = addButton(root, "Stop Monitoring");
+        stopMonitorButton.setOnClickListener(v -> stopMonitoring());
 
         Button pickButton = addButton(root, "Select Recording File");
         pickButton.setOnClickListener(v -> pickAudioFile());
@@ -210,6 +221,39 @@ public class MainActivity extends Activity {
         requestPermissions(new String[]{Manifest.permission.READ_CONTACTS}, REQ_CONTACT_PERMISSION);
     }
 
+    private void startMonitoringWithPermissions() {
+        if (Build.VERSION.SDK_INT >= 33 && checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
+            pendingMonitorStart = true;
+            requestPermissions(new String[]{Manifest.permission.POST_NOTIFICATIONS}, REQ_NOTIFICATION_PERMISSION);
+            return;
+        }
+        if (Build.VERSION.SDK_INT >= 23 && checkSelfPermission(audioPermission()) != PackageManager.PERMISSION_GRANTED) {
+            pendingMonitorStart = true;
+            requestPermissions(new String[]{audioPermission()}, REQ_AUDIO_PERMISSION);
+            return;
+        }
+        pendingMonitorStart = false;
+        startMonitoring();
+    }
+
+    private void startMonitoring() {
+        Intent intent = new Intent(this, CallRecordingMonitorService.class);
+        intent.setAction(CallRecordingMonitorService.ACTION_START);
+        if (Build.VERSION.SDK_INT >= 26) {
+            startForegroundService(intent);
+        } else {
+            startService(intent);
+        }
+        status("Monitoring started. New tracked call recordings will notify you.");
+    }
+
+    private void stopMonitoring() {
+        Intent intent = new Intent(this, CallRecordingMonitorService.class);
+        intent.setAction(CallRecordingMonitorService.ACTION_STOP);
+        startService(intent);
+        status("Monitoring stopped.");
+    }
+
     private void pickContact() {
         Intent intent = new Intent(Intent.ACTION_PICK, ContactsContract.CommonDataKinds.Phone.CONTENT_URI);
         startActivityForResult(intent, REQ_PICK_CONTACT);
@@ -223,7 +267,17 @@ public class MainActivity extends Activity {
     }
 
     private void handleIncomingIntent(Intent intent) {
-        if (intent == null || !Intent.ACTION_SEND.equals(intent.getAction())) {
+        if (intent == null) {
+            return;
+        }
+        if (ACTION_REVIEW_RECORDING.equals(intent.getAction())) {
+            String uriValue = intent.getStringExtra(EXTRA_AUDIO_URI);
+            if (uriValue != null && !uriValue.trim().isEmpty()) {
+                selectAudioUri(Uri.parse(uriValue), "Notification recording selected", Intent.FLAG_GRANT_READ_URI_PERMISSION);
+            }
+            return;
+        }
+        if (!Intent.ACTION_SEND.equals(intent.getAction())) {
             return;
         }
         Uri uri = intent.getParcelableExtra(Intent.EXTRA_STREAM);
@@ -574,8 +628,14 @@ public class MainActivity extends Activity {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults);
         if (requestCode == REQ_AUDIO_PERMISSION) {
             if (grantResults.length > 0 && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
-                findLatestRecording();
+                if (pendingMonitorStart) {
+                    pendingMonitorStart = false;
+                    startMonitoring();
+                } else {
+                    findLatestRecording();
+                }
             } else {
+                pendingMonitorStart = false;
                 status("Audio permission denied. Use Select Recording File instead.");
             }
             return;
@@ -585,6 +645,15 @@ public class MainActivity extends Activity {
                 pickContact();
             } else {
                 status("Contacts permission denied.");
+            }
+            return;
+        }
+        if (requestCode == REQ_NOTIFICATION_PERMISSION) {
+            if (grantResults.length > 0 && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
+                startMonitoringWithPermissions();
+            } else {
+                pendingMonitorStart = false;
+                status("Notification permission denied. Monitoring needs notifications.");
             }
         }
     }
