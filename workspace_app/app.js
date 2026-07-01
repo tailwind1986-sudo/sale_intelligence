@@ -17,6 +17,7 @@ const state = {
   promises: [],
   candidates: [],
   meetings: [],
+  calls: [],
   selectedMeeting: null,
   view: "dashboard",
 };
@@ -1045,6 +1046,36 @@ function renderMeetings() {
   }).join("");
 }
 
+async function loadCalls() {
+  const params = new URLSearchParams();
+  params.set("meeting_type", "전화");
+  if ($("callSearch").value.trim()) params.set("q", $("callSearch").value.trim());
+  if ($("callCompany").value) params.set("company_id", $("callCompany").value);
+  state.calls = await api(`/api/meetings?${params}`) || [];
+  renderCalls();
+}
+
+function renderCalls() {
+  if (!state.calls.length) {
+    $("callList").innerHTML = `<p class="empty">통화 기록이 없습니다.</p>`;
+    return;
+  }
+  const moodDot = { "긍정적": "🟢", "중립": "🟡", "부정적": "🔴", "혼재": "🟣" };
+  $("callList").innerHTML = state.calls.map(row => {
+    const dot = row.mood_overall ? (moodDot[row.mood_overall] || "") : "";
+    const statusLabel = row.has_analysis ? (dot ? `${dot} 분석완료` : "분석완료") : "미분석";
+    return `
+    <div class="meeting-item">
+      <button class="company-card" data-meeting-open="${row.id}">
+        <strong>${escapeHtml(row.company)}</strong>
+        <span>${escapeHtml([row.meeting_date, row.attendees || row.meeting_type, statusLabel].filter(Boolean).join(" · "))}</span>
+        <small>${escapeHtml(row.summary || "요약 없음")}</small>
+      </button>
+      <div class="meeting-expand company-expand" hidden></div>
+    </div>`;
+  }).join("");
+}
+
 async function toggleMeeting(btn) {
   const id = String(btn.dataset.meetingOpen);
   const item = btn.closest(".meeting-item");
@@ -1486,6 +1517,7 @@ async function refreshCompanyOptions() {
   state.companies = await api("/api/companies") || [];
   renderActionFilters();
   $("meetingCompany").innerHTML = companyOptions($("meetingCompany").value);
+  $("callCompany").innerHTML = companyOptions($("callCompany").value);
   $("uploadCompany").innerHTML = companyOptions($("uploadCompany").value);
   $("riskCompany").innerHTML = companyOptions($("riskCompany").value);
 }
@@ -1497,6 +1529,7 @@ function setView(view) {
   $("viewCompanies").classList.toggle("hidden", view !== "companies");
   $("viewCandidates").classList.toggle("hidden", view !== "candidates");
   $("viewMeetings").classList.toggle("hidden", view !== "meetings");
+  $("viewCalls").classList.toggle("hidden", view !== "calls");
   $("viewUpload").classList.toggle("hidden", view !== "upload");
   $("viewSearch").classList.toggle("hidden", view !== "search");
   $("viewSettings").classList.toggle("hidden", view !== "settings");
@@ -1515,6 +1548,7 @@ function setView(view) {
   const titles = {
     dashboard: "대시보드", actions: "액션 / 약속", companies: "고객사",
     candidates: "일정 후보", meetings: "미팅 요약", upload: "미팅 업로드",
+    calls: "통화 요약",
     search: "통합 검색", settings: "설정", calendar: "캘린더",
     monthlyreport: "월간 리포트",
   };
@@ -1531,6 +1565,7 @@ function setView(view) {
   if (view === "candidates") loadCandidates();
   if (view === "upload") resetUploadForm();
   if (view === "meetings") loadMeetings();
+  if (view === "calls") loadCalls();
   if (view === "monthlyreport") initMonthlyReport();
 }
 
@@ -1588,6 +1623,11 @@ function bindEvents() {
   $("meetingSearch").oninput = () => {
     clearTimeout(window.__meetingSearchTimer);
     window.__meetingSearchTimer = setTimeout(loadMeetings, 250);
+  };
+  $("callCompany").onchange = loadCalls;
+  $("callSearch").oninput = () => {
+    clearTimeout(window.__callSearchTimer);
+    window.__callSearchTimer = setTimeout(loadCalls, 250);
   };
   $("uploadForm").onsubmit = submitUpload;
   $("clearUploadBtn").onclick = resetUploadForm;

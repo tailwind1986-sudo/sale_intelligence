@@ -2132,7 +2132,12 @@ def ignore_schedule_candidate(meeting_id: int, index: int, db: Session = Depends
 
 
 @app.get("/api/meetings", dependencies=[Depends(_require_auth)])
-def list_meeting_results(q: str = "", company_id: int | None = None, db: Session = Depends(get_db)):
+def list_meeting_results(
+    q: str = "",
+    company_id: int | None = None,
+    meeting_type: str | None = None,
+    db: Session = Depends(get_db),
+):
     query = db.query(MeetingRecord).options(
         joinedload(MeetingRecord.company),
         joinedload(MeetingRecord.analysis),
@@ -2141,6 +2146,14 @@ def list_meeting_results(q: str = "", company_id: int | None = None, db: Session
     )
     if company_id:
         query = query.filter(MeetingRecord.company_id == company_id)
+    if meeting_type:
+        if meeting_type == "\uc804\ud654":
+            query = query.filter(or_(
+                MeetingRecord.meeting_type == "\uc804\ud654",
+                MeetingRecord.memo.ilike("%Android call recording%"),
+            ))
+        else:
+            query = query.filter(MeetingRecord.meeting_type == meeting_type)
     if q:
         like = f"%{q}%"
         query = query.filter(

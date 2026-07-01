@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <meta name="theme-color" content="#ffffff" />
   <title>Sales Workspace</title>
-  <link rel="stylesheet" href="/mobile/workspace/static/styles.css?v=20260630-calendar2" />
+  <link rel="stylesheet" href="/mobile/workspace/static/styles.css?v=20260702-calls" />
 </head>
 <body>
   <section id="workspaceLogin" class="workspace-login hidden">
@@ -56,6 +56,10 @@
         <button class="nav-item" data-view="meetings">
           <svg class="nav-icon" viewBox="0 0 20 20" fill="none"><path d="M4 4h12a1 1 0 011 1v8a1 1 0 01-1 1H7l-3 3V5a1 1 0 011-1z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></svg>
           미팅 요약
+        </button>
+        <button class="nav-item" data-view="calls">
+          <svg class="nav-icon" viewBox="0 0 20 20" fill="none"><path d="M6 3h3l1 4-2 1c1 2 2 3 4 4l1-2 4 1v3c0 1-1 2-2 2C8 16 4 12 4 5c0-1 1-2 2-2z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></svg>
+          통화 요약
         </button>
 
         <button class="nav-item" data-view="calendar">
@@ -236,6 +240,19 @@
           </section>
         </section>
 
+        <section id="viewCalls" class="view hidden">
+          <section class="panel">
+            <div class="panel-head">
+              <h2>통화 요약 결과</h2>
+            </div>
+            <div class="filters">
+              <input id="callSearch" placeholder="통화 내용/요약 검색" />
+              <select id="callCompany"></select>
+            </div>
+            <div id="callList"></div>
+          </section>
+        </section>
+
         <!-- 미팅 업로드 -->
         <section id="viewUpload" class="view hidden">
           <section class="panel">
@@ -367,6 +384,6 @@
     </div>
   </div>
 
-  <script src="/mobile/workspace/static/app.js?v=20260630-calendar2"></script>
+  <script src="/mobile/workspace/static/app.js?v=20260702-calls"></script>
 </body>
 </html>

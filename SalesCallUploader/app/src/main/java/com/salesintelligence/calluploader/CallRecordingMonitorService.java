@@ -201,12 +201,21 @@ public class CallRecordingMonitorService extends Service {
             flags |= PendingIntent.FLAG_IMMUTABLE;
         }
         PendingIntent pendingIntent = PendingIntent.getActivity(this, 4102, intent, flags);
+        Intent stopIntent = new Intent(this, CallRecordingMonitorService.class);
+        stopIntent.setAction(ACTION_STOP);
+        PendingIntent stopPendingIntent = PendingIntent.getService(this, 4103, stopIntent, flags);
         Notification.Builder builder = notificationBuilder(MONITOR_CHANNEL_ID)
                 .setSmallIcon(android.R.drawable.ic_menu_upload)
-                .setContentTitle("Sales call monitoring")
-                .setContentText("Watching new tracked call recordings")
+                .setContentTitle("Sales Call Uploader 감시중")
+                .setContentText("추적 대상 통화녹음을 감시하고 있습니다")
                 .setContentIntent(pendingIntent)
-                .setOngoing(true);
+                .setOngoing(true)
+                .setAutoCancel(false)
+                .setOnlyAlertOnce(true)
+                .addAction(android.R.drawable.ic_menu_close_clear_cancel, "감시 중지", stopPendingIntent);
+        if (Build.VERSION.SDK_INT >= 21) {
+            builder.setCategory(Notification.CATEGORY_SERVICE);
+        }
         if (Build.VERSION.SDK_INT < 26) {
             builder.setPriority(Notification.PRIORITY_LOW);
         }
