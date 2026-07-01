@@ -127,6 +127,9 @@ public class MainActivity extends Activity {
         Button addTrackedButton = addButton(root, "Add Tracked Contact");
         addTrackedButton.setOnClickListener(v -> pickContactWithPermission());
 
+        Button removeTrackedButton = addButton(root, "Remove Tracked Contact");
+        removeTrackedButton.setOnClickListener(v -> showTrackedContactRemover());
+
         trackedContactsText = new TextView(this);
         trackedContactsText.setPadding(0, dp(10), 0, dp(4));
         root.addView(trackedContactsText);
@@ -386,6 +389,76 @@ public class MainActivity extends Activity {
         } catch (JSONException ignored) {
         }
         prefs.edit().putString("tracked_contacts", updated.toString()).apply();
+    }
+
+    private void showTrackedContactRemover() {
+        List<TrackedContact> contacts = trackedContacts();
+        if (contacts.isEmpty()) {
+            status("Tracked contacts: none");
+            return;
+        }
+        String[] labels = new String[contacts.size()];
+        for (int i = 0; i < contacts.size(); i++) {
+            TrackedContact contact = contacts.get(i);
+            labels[i] = displayContact(contact.name, contact.phone)
+                    + " -> "
+                    + contact.companyName
+                    + " (#"
+                    + contact.companyId
+                    + ")";
+        }
+        new AlertDialog.Builder(this)
+                .setTitle("Remove tracked contact")
+                .setItems(labels, (dialog, which) -> confirmRemoveTrackedContact(contacts.get(which)))
+                .setNegativeButton("Cancel", null)
+                .show();
+    }
+
+    private void confirmRemoveTrackedContact(TrackedContact contact) {
+        new AlertDialog.Builder(this)
+                .setTitle("Remove this contact?")
+                .setMessage(displayContact(contact.name, contact.phone)
+                        + "\n"
+                        + contact.companyName
+                        + " (#"
+                        + contact.companyId
+                        + ")")
+                .setPositiveButton("Remove", (dialog, which) -> removeTrackedContact(contact))
+                .setNegativeButton("Cancel", null)
+                .show();
+    }
+
+    private void removeTrackedContact(TrackedContact contact) {
+        JSONArray original = trackedContactsJson();
+        JSONArray updated = new JSONArray();
+        String targetPhone = normalizePhone(contact.phone);
+        String targetName = contact.name.trim();
+        int targetCompanyId = contact.companyId;
+        for (int i = 0; i < original.length(); i++) {
+            JSONObject row = original.optJSONObject(i);
+            if (row == null) {
+                continue;
+            }
+            String rowPhone = normalizePhone(row.optString("phone", ""));
+            String rowName = row.optString("name", "").trim();
+            int rowCompanyId = row.optInt("company_id", 0);
+            boolean samePhone = !targetPhone.isEmpty() && targetPhone.equals(rowPhone);
+            boolean sameName = !targetName.isEmpty() && targetName.equals(rowName);
+            if ((samePhone || sameName) && targetCompanyId == rowCompanyId) {
+                continue;
+            }
+            updated.put(row);
+        }
+        prefs.edit().putString("tracked_contacts", updated.toString()).apply();
+        if (selectedCompanyId == targetCompanyId
+                && (phonesMatch(phoneInput.getText().toString(), contact.phone)
+                || safe(contactInput.getText().toString()).trim().equals(targetName))) {
+            selectedCompanyId = 0;
+            selectedCompanyName = "";
+            updateMatchedCompanyText();
+        }
+        refreshTrackedContactsText();
+        status("Tracked contact removed: " + displayContact(contact.name, contact.phone));
     }
 
     private JSONArray trackedContactsJson() {
