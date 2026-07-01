@@ -173,6 +173,7 @@ public class CallRecordingMonitorService extends Service {
                 .setContentText(match.displayName + " -> " + match.companyName)
                 .setStyle(new Notification.BigTextStyle().bigText(fileName + "\n" + match.displayName + " -> " + match.companyName))
                 .setContentIntent(pendingIntent)
+                .addAction(android.R.drawable.ic_menu_upload, "Review Upload", pendingIntent)
                 .setAutoCancel(true);
         if (Build.VERSION.SDK_INT < 26) {
             builder.setPriority(Notification.PRIORITY_HIGH);
