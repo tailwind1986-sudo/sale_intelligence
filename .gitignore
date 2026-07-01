@@ -7,3 +7,8 @@ __pycache__/
 venv/
 *.db
 *.sqlite3
+android-setup-secret.txt
+SalesCallUploader/.gradle/
+SalesCallUploader/.idea/
+SalesCallUploader/**/build/
+SalesCallUploader/local.properties

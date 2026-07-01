@@ -147,6 +147,25 @@ def send_schedule_created(schedule, chat_id: str | None = None) -> bool:
     return send_message("\n".join(lines), chat_id)
 
 
+def send_call_analyzed(meeting, duration_seconds: int = 0, chat_id: str | None = None) -> bool:
+    """Notify Telegram when an Android call recording has been analyzed."""
+    company_name = meeting.company.name if getattr(meeting, "company", None) else "Uncategorized Calls"
+    minutes = max(duration_seconds or 0, 0) // 60
+    seconds = max(duration_seconds or 0, 0) % 60
+    summary = ""
+    if getattr(meeting, "analysis", None):
+        summary = meeting.analysis.one_line_summary or ""
+    lines = [
+        "<b>[Call Analysis Complete]</b>",
+        f"Company: {escape(company_name)}",
+        f"Duration: {minutes}m {seconds}s",
+        f"Meeting ID: #{meeting.id}",
+    ]
+    if summary:
+        lines.append(f"Summary: {escape(summary)}")
+    return send_message("\n".join(lines), chat_id)
+
+
 def send_daily_digest(db) -> bool:
     """Send a morning briefing with today's schedule and near-term execution items."""
     from database.models import ActionItem, Promise, Schedule

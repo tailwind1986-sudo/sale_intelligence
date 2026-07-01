@@ -3,6 +3,8 @@ from __future__ import annotations
 import hashlib
 import hmac
 import os
+import re
+import tempfile
 from calendar import monthrange
 from datetime import date, datetime, time, timedelta
 from pathlib import Path
@@ -35,11 +37,13 @@ load_dotenv()
 from database.db import SessionLocal, create_database
 from database.models import ActionItem, Company, CompanyHistory, Contact, CustomerInfo, IssueTag, MeetingAnalysis, MeetingRecord, MonthlyInsight, MonthlyReport, Promise, SalesSignal, Schedule, ScheduleCategory
 from services.ai_analyzer import analyze_meeting_transcript, generate_monthly_insight, generate_monthly_insight_for_company
+from services.whisper_service import transcribe_audio
 
 
 APP_DIR = Path(__file__).parent
 STATIC_DIR = APP_DIR / "mobile_calendar"
 WORKSPACE_DIR = APP_DIR / "workspace_app"
+CALL_UPLOAD_DIR = APP_DIR / "data" / "call_uploads"
 
 
 def _read_secret_file(path: Path) -> dict:
@@ -853,6 +857,105 @@ def _json_list(value) -> list:
 
 def _json_dict(value) -> dict:
     return value if isinstance(value, dict) else {}
+
+
+def _normalize_phone(value: str | None) -> str:
+    return re.sub(r"\D+", "", value or "")
+
+
+def _phone_variants(value: str | None) -> set[str]:
+    digits = _normalize_phone(value)
+    if not digits:
+        return set()
+    variants = {digits}
+    if digits.startswith("0082"):
+        digits = "82" + digits[4:]
+        variants.add(digits)
+    if digits.startswith("82") and len(digits) > 2:
+        variants.add("0" + digits[2:])
+    if digits.startswith("0") and len(digits) > 1:
+        variants.add("82" + digits[1:])
+    return variants
+
+
+def _find_contact_by_phone(db: Session, phone_number: str | None) -> Contact | None:
+    target_variants = _phone_variants(phone_number)
+    if not target_variants:
+        return None
+    contacts = (
+        db.query(Contact)
+        .options(joinedload(Contact.company))
+        .filter(Contact.phone != None)
+        .all()
+    )
+    for contact in contacts:
+        if target_variants & _phone_variants(contact.phone):
+            return contact
+    return None
+
+
+def _get_uncategorized_call_company(db: Session) -> Company:
+    company = db.query(Company).filter(Company.name == "Uncategorized Calls").first()
+    if company:
+        return company
+    company = Company(
+        name="Uncategorized Calls",
+        business_type="Call",
+        sales_stage="Needs Review",
+        memo="Temporary bucket for phone calls that could not be matched by contact phone number.",
+    )
+    db.add(company)
+    db.commit()
+    db.refresh(company)
+    return company
+
+
+def _parse_call_datetime(value: str | None) -> datetime:
+    raw = (value or "").strip()
+    if not raw:
+        return _now_kst()
+    if raw.endswith("Z"):
+        raw = raw[:-1] + "+00:00"
+    try:
+        parsed = datetime.fromisoformat(raw)
+    except ValueError:
+        return _now_kst()
+    if parsed.tzinfo:
+        return parsed.astimezone(_KST).replace(tzinfo=None)
+    return parsed
+
+
+def _call_file_suffix(filename: str | None) -> str:
+    suffix = Path(filename or "").suffix.lower()
+    if suffix in {".m4a", ".aac", ".mp3", ".mp4", ".wav", ".ogg", ".webm"}:
+        return suffix
+    return ".m4a"
+
+
+async def _save_temp_call_audio(file: UploadFile) -> Path:
+    CALL_UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+    suffix = _call_file_suffix(file.filename)
+    handle = tempfile.NamedTemporaryFile(
+        prefix="call_",
+        suffix=suffix,
+        dir=CALL_UPLOAD_DIR,
+        delete=False,
+    )
+    path = Path(handle.name)
+    try:
+        with handle:
+            while True:
+                chunk = await file.read(1024 * 1024)
+                if not chunk:
+                    break
+                handle.write(chunk)
+    except Exception:
+        try:
+            path.unlink()
+        except OSError:
+            pass
+        raise
+    return path
 
 
 def _compact_meeting_report(meeting: MeetingRecord) -> str:
@@ -1962,6 +2065,92 @@ def list_meeting_results(q: str = "", company_id: int | None = None, db: Session
         }
         for m in rows
     ]
+
+
+@app.post("/api/calls/upload", dependencies=[Depends(_require_auth)])
+async def upload_call_record(
+    phone_number: str = Form(""),
+    call_ended_at: str = Form(""),
+    contact_name: str = Form(""),
+    duration_seconds: int = Form(0),
+    run_ai: bool = Form(True),
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+):
+    if not file or not file.filename:
+        raise HTTPException(status_code=400, detail="Audio file is required")
+
+    audio_path = await _save_temp_call_audio(file)
+    try:
+        if audio_path.stat().st_size <= 0:
+            raise HTTPException(status_code=400, detail="Audio file is empty")
+
+        try:
+            transcript = transcribe_audio(audio_path, language="ko")
+        except Exception as exc:
+            raise HTTPException(status_code=502, detail=f"Audio transcription failed: {type(exc).__name__}") from exc
+
+        if not transcript.strip():
+            raise HTTPException(status_code=400, detail="Transcription returned empty text")
+
+        ended_at = _parse_call_datetime(call_ended_at)
+        contact = _find_contact_by_phone(db, phone_number)
+        company = contact.company if contact and contact.company else _get_uncategorized_call_company(db)
+
+        normalized_phone = _normalize_phone(phone_number)
+        attendees = (contact_name or (contact.name if contact else "") or normalized_phone or "Phone call").strip()
+        meta_parts = [
+            "Source: Android call recording",
+            f"Phone: {phone_number or '-'}",
+            f"Normalized phone: {normalized_phone or '-'}",
+            f"Contact: {contact_name or (contact.name if contact else '-')}",
+            f"Duration seconds: {max(duration_seconds, 0)}",
+            f"Matched contact id: {contact.id if contact else '-'}",
+        ]
+        record = MeetingRecord(
+            company_id=company.id,
+            meeting_date=ended_at.date(),
+            meeting_type="전화",
+            attendees=attendees,
+            raw_text=transcript.strip(),
+            file_name=file.filename,
+            memo="\n".join(meta_parts),
+        )
+        db.add(record)
+        db.commit()
+        db.refresh(record)
+
+        ai_error = ""
+        if run_ai:
+            try:
+                _analyze_record(db, record)
+                db.refresh(record)
+                try:
+                    from services.telegram_service import send_call_analyzed
+
+                    send_call_analyzed(record, duration_seconds=duration_seconds)
+                except Exception as exc:
+                    print(f"Telegram call notification failed: {type(exc).__name__}")
+            except Exception as exc:
+                ai_error = str(exc)
+
+        return {
+            "ok": True,
+            "id": record.id,
+            "meeting_id": record.id,
+            "company_id": company.id,
+            "company_name": company.name,
+            "matched": bool(contact),
+            "matched_contact_id": contact.id if contact else None,
+            "transcript_length": len(record.raw_text or ""),
+            "has_analysis": bool(record.analysis),
+            "ai_error": ai_error,
+        }
+    finally:
+        try:
+            audio_path.unlink()
+        except OSError:
+            pass
 
 
 @app.post("/api/meetings/upload", dependencies=[Depends(_require_auth)])
